@@ -44,11 +44,22 @@
   function api(path, body) {
     if (!API_BASE) return Promise.resolve({ network: true });
     if (bridge && bridge.api) { try { return Promise.resolve(bridge.api(API_BASE, path, body)); } catch (_) {} }
-    return fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-    }).then((r) => r.json()).catch(() => ({ network: true }));
+    return new Promise((resolve) => {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+      fetch(API_BASE + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+        signal: ctrl ? ctrl.signal : undefined,
+      }).then((r) => Promise.all([r.status, r.json().catch(() => null)])).then(([status, data]) => {
+        if (timer) clearTimeout(timer);
+        resolve(data ? Object.assign({ _status: status }, data) : { network: true, _status: status });
+      }).catch(() => {
+        if (timer) clearTimeout(timer);
+        resolve({ network: true });
+      });
+    });
   }
 function errText(res, fb) {
     if (!res) return fb || 'Unknown error.';
@@ -105,22 +116,30 @@ const CSS = `
     const btn = root.querySelector('#bm-lic-go');
 
     function pending(on) { btn.disabled = on; btn.textContent = on ? 'VERIFYING…' : 'UNLOCK ALL POWERS'; }
+    function attempt(key, deviceId, tries, maxTry) {
+      pending(true); msg.classList.remove('err');
+      msg.textContent = tries > 1 ? ('Server starting… retrying (' + tries + '/' + maxTry + ')') : 'Contacting license server…';
+      api('/api/injector', { key, deviceId }).then((res) => {
+        if (res && res.ok && res.code) {
+          msg.classList.remove('err'); msg.textContent = '✔ License verified — loading engine…';
+          setTimeout(() => { root.remove(); runEngine(res.code); }, 600);
+        } else if (res && res.network && tries < maxTry) {
+          setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 14000);
+        } else {
+          pending(false);
+          msg.textContent = errText(res, 'Key invalid, expired or revoked.');
+        }
+      }).catch(() => {
+        if (tries < maxTry) setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 14000);
+        else { pending(false); msg.classList.add('err'); msg.textContent = errText({ network: true }, ''); }
+      });
+    }
     function run() {
       const key = (input.value || '').trim().toUpperCase();
       if (!key) { msg.classList.add('err'); msg.textContent = 'Enter your key first.'; input.focus(); return; }
       if (!API_BASE) { msg.classList.add('err'); msg.textContent = 'This build has no license server configured.'; return; }
-      pending(true); msg.classList.remove('err'); msg.textContent = 'Contacting license server…';
       LIC.key = key; LIC.deviceId = LIC.deviceId || genId(); saveStored();
-      api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-        if (res && res.ok && res.code) {
-          msg.classList.remove('err'); msg.textContent = '✔ License verified — loading engine…';
-          setTimeout(() => { root.remove(); runEngine(res.code); }, 600);
-        } else {
-          pending(false);
-          msg.classList.add('err');
-          msg.textContent = errText(res, 'Key invalid, expired or revoked.');
-        }
-      }).catch(() => { pending(false); msg.classList.add('err'); msg.textContent = 'Could not reach the license server (network).'; });
+      attempt(key, LIC.deviceId, 1, 5);
     }
     btn.addEventListener('click', run);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });

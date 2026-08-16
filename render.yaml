@@ -1,0 +1,23 @@
+# Render Blueprint — one-click deploy
+# Place at the REPOSITORY ROOT so Render auto-detects it on import.
+# It deploys the Node backend inside server/ automatically.
+services:
+  - type: web
+    name: ogxisai-license
+    runtime: node
+    plan: free
+    rootDir: server          # backend lives in server/
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      # SET THESE IN RENDER -> your service -> Environment
+      - key: ADMIN_KEY            # you use this on the /admin key page
+        sync: false
+      - key: SESSION_SECRET       # signs the license sessions
+        sync: false
+      - key: MONGODB_URI          # (recommended) free MongoDB Atlas for persistence
+        sync: false
+      - key: SEED_KEYS            # (optional) comma-separated keys recreated on boot
+        sync: false

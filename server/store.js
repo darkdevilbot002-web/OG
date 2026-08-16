@@ -55,8 +55,10 @@ function init() {
   for (const k of SEED) {
     const r = get(k);
     if (r) { r.active = 1; upsert(r); }
-    else upsert(freshRecord('pro', 0, 'seed'));
+    else { const f = freshRecord('pro', 0, 'seed'); f.key = k; upsert(f); }
   }
+  // safety: remove any accidental rows where the key ended up NULL
+  db.prepare('DELETE FROM keys WHERE key IS NULL OR key = \'\'').run();
   return db;
 }
 

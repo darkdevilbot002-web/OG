@@ -9,6 +9,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const store = require('./store');
@@ -34,6 +35,21 @@ app.post('/api/login', (req, res) => {
     return res.json({ ok: true, token: store.ADMIN_KEY, user: username });
   }
   return res.status(401).json({ ok: false, error: 'Invalid admin credentials.' });
+});
+
+/* The actual powers engine is HOSTED HERE, never shipped to buyers.
+   Only served after a valid key + device. Revoking the key stops this
+   endpoint from returning the code → the buyer cannot load powers. */
+app.post('/api/injector', async (req, res) => {
+  const { key, deviceId } = req.body || {};
+  const result = await store.verify(key, deviceId);
+  if (!result.valid) return res.status(401).json(result);
+  try {
+    const code = fs.readFileSync(path.join(__dirname, 'sources', 'injector.js'), 'utf8');
+    res.json({ ok: true, code, plan: result.plan, expiresAt: result.expiresAt });
+  } catch (e) {
+    res.status(500).json({ valid: false, error: 'Engine source not found on server.' });
+  }
 });
 
 /* Buyers' extension posts the key here. */

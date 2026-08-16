@@ -35,17 +35,15 @@
   } catch (_) { /* fall back to per-site localStorage + page fetch inside injector */ }
 
   const s = document.createElement('script');
-  s.src = chrome.runtime.getURL('injector.js');
+  s.src = chrome.runtime.getURL('gate.js'); // tiny launcher — powers load from the server after key success
   s.dataset.loadingGif = chrome.runtime.getURL('loading.gif');
   s.dataset.headerGif  = chrome.runtime.getURL('header.gif');
 
   /* ──────────────────────────────────────────────────────────────
      ★ YOUR RENDER URL — replace the placeholder with your live URL,
        e.g.  https://ogxisai-license.onrender.com
-     Keeping the empty default below means the AS-IS (no-license)
-     build still works for testing (lock screen is skipped).
      ────────────────────────────────────────────────────────────── */
-  s.dataset.apiBase = 'https://ogxisai-license.onrender.com'; // ⬅ live Render license server
+  s.dataset.apiBase = 'https://ogxisai-license.onrender.com'; // ⬅ live Render license/engine server
 
   s.onload = () => s.remove();
   (document.head || document.documentElement).appendChild(s);

@@ -22,7 +22,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injector.js",
+        "gate.js",
         "loading.gif",
         "header.gif",
         "icons/icon16.png",

@@ -13,6 +13,8 @@ const crypto = require('crypto');
 const { MongoClient } = require('mongodb');
 
 const ADMIN_KEY    = process.env.ADMIN_KEY || 'dev-admin-CHANGE-ME';
+const ADMIN_USER   = process.env.ADMIN_USER || 'OG';
+const ADMIN_PASS   = process.env.ADMIN_PASS || 'OG@098';
 const MONGODB_URI  = process.env.MONGODB_URI || null;
 const MONGO_DB     = process.env.MONGO_DB || 'ogxisai';
 const MONGO_COLL   = process.env.MONGO_COLL || 'licenses';
@@ -201,6 +203,8 @@ async function list() {
 
 module.exports = {
   ADMIN_KEY,
+  ADMIN_USER,
+  ADMIN_PASS,
   SESSION_TTL_MS,
   init,
   create,

@@ -36,6 +36,7 @@
   .loading{color:#8b8ba3;font-size:13px}
   .err{color:#f87171;font-size:13px}
   .ok{color:#4ade80;font-size:13px}
+  .hidden{display:none}
   #admKey{max-width:320px}
 </style>
 </head>
@@ -45,15 +46,17 @@
   <div class="sub">Mint keys → buyers enter them in the extension → all powers unlock. Revoked keys lose all powers within ~1 second. One key = one device.</div>
 
   <div class="card">
-    <h2>Admin authentication</h2>
-    <label>Admin key (ADMIN_KEY from your Render env)</label>
+    <h2>Admin login</h2>
     <div class="row">
-      <input id="admKey" type="password" placeholder="x-admin-key">
-      <button class="btn-ghost" onclick="saveAdm()">Save</button>
-      <button class="btn-ghost" onclick="clearAdm()">Clear</button>
+      <div><label>Username</label><input id="admUser" value="OG" autocomplete="off"></div>
+      <div><label>Password</label><input id="admPass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')login()"></div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end"><button class="btn-danger" onclick="login()">LOGIN</button></div>
     </div>
-    <div class="hint">Stored only in this browser (localStorage). Used in every request header.</div>
+    <div class="hint" id="loginMsg">&nbsp;</div>
+    <div class="hint"><span id="whoBar"></span> <button class="btn-ghost" id="logoutBtn" onclick="logout()" style="display:none;padding:6px 10px;font-size:12px">Logout</button></div>
   </div>
+
+  <div class="protected hidden">
 
   <div class="card">
     <h2>Create new key</h2>
@@ -93,14 +96,37 @@
     </table>
     </div>
   </div>
+  </div><!-- /protected -->
 </div>
 <script>
 const base = location.origin;
-function adm() { return document.getElementById('admKey').value.trim(); }
-function saveAdm(){ localStorage.setItem('ogx_adm', adm()); flash(); }
-function clearAdm(){ localStorage.setItem('ogx_adm',''); document.getElementById('admKey').value=''; flash(); }
-function flash(){ const m=document.getElementById('makeMsg'); m.className='ok'; m.textContent='Admin key saved.'; setTimeout(()=>m.textContent='',1600); }
-window.onload=()=>{ document.getElementById('admKey').value = localStorage.getItem('ogx_adm')||''; loadKeys(); };
+function adm(){ return localStorage.getItem('ogx_adm')||''; }
+function showProtected(on){ document.querySelectorAll('.protected').forEach(d=>d.classList.toggle('hidden',!on)); }
+function afterAuth(){
+  const on = !!adm();
+  showProtected(on);
+  const who = document.getElementById('whoBar');
+  const lo = document.getElementById('logoutBtn');
+  if (who) who.textContent = on ? ('Logged in as ' + (localStorage.getItem('ogx_adm_user')||'admin')) : 'Not logged in';
+  if (lo) lo.style.display = on ? 'inline-block' : 'none';
+}
+function login(){
+  const msg=document.getElementById('loginMsg');
+  const user=document.getElementById('admUser').value.trim();
+  const pass=document.getElementById('admPass').value;
+  msg.className='hint'; msg.textContent='Logging in…';
+  fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})})
+    .then(r=>r.json()).then(j=>{
+      if(j.ok){
+        localStorage.setItem('ogx_adm', j.token);
+        localStorage.setItem('ogx_adm_user', user);
+        msg.className='ok'; msg.textContent='Logged in.';
+        afterAuth(); loadKeys();
+      } else { msg.className='err'; msg.textContent=(j.error||'Invalid credentials.'); }
+    }).catch(()=>{ msg.className='err'; msg.textContent='Server unreachable.'; });
+}
+function logout(){ localStorage.removeItem('ogx_adm'); localStorage.removeItem('ogx_adm_user'); document.getElementById('admPass').value=''; afterAuth(); }
+window.onload=()=>{ afterAuth(); if(adm()) loadKeys(); };
 
 function api(path, body){
   return fetch(base+path, {method:'POST', headers:{'Content-Type':'application/json','x-admin-key':adm()}, body: JSON.stringify(body||{})})
@@ -110,7 +136,7 @@ function quick(d){ document.getElementById('days').value=d; }
 
 async function createKey(){
   const m=document.getElementById('makeMsg');
-  if(!adm()){ m.className='err'; m.textContent='Enter your ADMIN_KEY first.'; return; }
+  if(!adm()){ m.className='err'; m.textContent='Login on the admin panel first.'; return; }
   try{
     const days=parseInt(document.getElementById('days').value||'0',10);
     const r=await api('/api/keys',{plan:document.getElementById('plan').value, days, note:document.getElementById('note').value});
@@ -123,7 +149,7 @@ async function createKey(){
 
 async function loadKeys(){
   const msg=document.getElementById('listMsg');
-  if(!adm()){ msg.textContent='Enter your ADMIN_KEY above to see keys.'; document.getElementById('keysBody').innerHTML=''; return; }
+  if(!adm()){ msg.textContent='Login to see keys.'; document.getElementById('keysBody').innerHTML=''; return; }
   msg.className='loading'; msg.textContent='Loading…';
   try{
     const keys=await (await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}})).json();

@@ -13,7 +13,13 @@ services:
     healthCheckPath: /healthz
     envVars:
       # SET THESE IN RENDER -> your service -> Environment
-      - key: ADMIN_KEY            # you use this on the /admin key page
+      - key: ADMIN_USER           # admin panel username (default "OG")
+        value: OG
+        sync: false
+      - key: ADMIN_PASS           # admin panel password (default "OG@098") — CHANGE THIS
+        value: OG@098
+        sync: false
+      - key: ADMIN_KEY            # returned after login; used as the admin token
         sync: false
       - key: SESSION_SECRET       # signs the license sessions
         sync: false

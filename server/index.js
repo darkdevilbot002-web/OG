@@ -28,6 +28,14 @@ function requireAdmin(req, res, next) {
 app.get('/', (req, res) => res.json({ name: 'OGxISAI License API', status: 'ok', time: Date.now() }));
 app.get('/healthz', (req, res) => res.json({ status: 'ok', time: Date.now() }));
 
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (username === store.ADMIN_USER && password === store.ADMIN_PASS) {
+    return res.json({ ok: true, token: store.ADMIN_KEY, user: username });
+  }
+  return res.status(401).json({ ok: false, error: 'Invalid admin credentials.' });
+});
+
 /* Buyers' extension posts the key here. */
 app.post('/api/verify', async (req, res) => {
   const { key, deviceId } = req.body || {};

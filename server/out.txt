@@ -1,6 +1,0 @@
-OGxISAI license server running.
-  → port      : 3155
-  → storage   : SQLite (server/data/keys.db)
-  → admin user: OG (login on the / admin page)
-  → ADMIN_KEY : dev-admin-CHANGE-ME
-  Mint a key:  curl -X POST https://<your-app>.onrender.com/api/keys -H "Content-Type: application/json" -H "x-admin-key: <ADMIN_KEY>" -d '{"days":30}'

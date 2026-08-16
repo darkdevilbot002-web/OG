@@ -5,45 +5,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OGxISAI License Admin</title>
 <style>
-  *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif}
-  body{margin:0;background:#06060c;color:#e6e6f0;min-height:100vh}
-  .wrap{max-width:1000px;margin:0 auto;padding:28px 18px 60px}
-  h1{letter-spacing:4px;font-weight:900;font-size:22px;margin:0 0 4px}
-  h1 span{color:#ef4444}
-  .sub{color:#8b8ba3;font-size:13px;margin-bottom:24px}
-  .card{background:#0d0d17;border:1px solid #1e1e30;border-radius:14px;padding:18px;margin-bottom:20px}
-  .card h2{font-size:15px;margin:0 0 14px;color:#fca5a5;letter-spacing:1px;text-transform:uppercase}
+  *{box-sizing:border-box;font-family:'Inter','Segoe UI',system-ui,sans-serif}
+  body{margin:0;background:radial-gradient(1000px 520px at 50% -120px,#170a1c 0%,transparent 60%),#08080f;color:#e8e8f2;min-height:100vh}
+  .wrap{max-width:980px;margin:0 auto;padding:30px 18px 70px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .logo{font-weight:900;font-size:26px;letter-spacing:6px;background:linear-gradient(120deg,#fff,#f87171);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .logo small{font-weight:600;font-size:11px;letter-spacing:2px;color:#8b8ba3;background:none;-webkit-text-fill-color:#8b8ba3;margin-left:6px}
+  .sub{color:#9aa0b8;font-size:13px;line-height:1.6;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+  .legend{font-size:11px;color:#9aa0b8;display:inline-flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .dt-bound{background:#7dd3fc;box-shadow:0 0 8px #38bdf8}
+  .dt-unbound{background:#c4b5fd}
+  .card{background:linear-gradient(180deg,rgba(20,22,38,.92),rgba(12,13,24,.92));border:1px solid #232642;border-radius:16px;padding:20px;margin-bottom:18px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  .card h2{font-size:13px;margin:0 0 16px;color:#fca5a5;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;gap:9px}
+  .card h2::before{content:'';width:9px;height:9px;border-radius:2px;background:linear-gradient(135deg,#dc2626,#f59e0b)}
   label{font-size:12px;color:#8b8ba3;display:block;margin:8px 0 4px}
-  input,select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #2a2a3e;background:#0a0a14;color:#fff;font-size:14px}
-  input:focus,select:focus{outline:none;border-color:#ef4444}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
-  .row>*{flex:1;min-width:130px}
-  button{cursor:pointer;border:0;border-radius:8px;font-weight:700;padding:11px 14px;font-size:13px;letter-spacing:1px}
-  .btn-danger{background:linear-gradient(135deg,#7f1d1d,#dc2626);color:#fff}
-  .btn-ghost{background:#1a1a2a;color:#cbd5e1;border:1px solid #2a2a3e}
-  .btn-ghost:hover{background:#23233a}
-  .hint{font-size:11px;color:#8b8ba3;margin-top:6px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:#8b8ba3;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:8px;border-bottom:1px solid #1a1a2c}
-  td{padding:9px 8px;border-bottom:1px solid #131322;vertical-align:top}
-  .mono{font-family:Consolas,monospace;font-size:12px;color:#93c5fd}
-  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px}
-  .b-active{background:#14532d;color:#4ade80}
-  .b-expired{background:#78350f;color:#fbbf24}
-  .b-revoked{background:#450a0a;color:#f87171}
+  input,select{width:100%;padding:11px 13px;border-radius:10px;border:1px solid #2b2f4d;background:#0b0c18;color:#fff;font-size:14px;transition:border-color .15s,box-shadow .15s}
+  input:focus,select:focus{outline:none;border-color:#ef4444;box-shadow:0 0 0 3px rgba(220,38,38,.15)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+  button{cursor:pointer;border:0;border-radius:10px;font-weight:700;padding:11px 14px;font-size:13px;letter-spacing:.5px;transition:filter .15s,transform .05s}
+  button:active{transform:translateY(1px)}
+  .btn-danger{background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff;box-shadow:0 6px 18px rgba(239,68,68,.3)}
+  .btn-danger:hover{filter:brightness(1.1)}
+  .btn-ghost{background:#14162a;color:#cbd5e1;border:1px solid #2b2f4d}
+  .btn-ghost:hover{background:#1d2038;border-color:#3a3f66}
+  .seg{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .seg button{background:#0c0d1a;border:1px solid #262a45;color:#cbd5e1}
+  .seg button:hover{background:#1a1d33}
+  .hint{font-size:11px;color:#8b8ba3;margin-top:8px}
+  .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.4px;white-space:nowrap}
+  .b-active{background:#0f3d22;color:#4ade80}
+  .b-expired{background:#3b2508;color:#fbbf24}
+  .b-revoked{background:#3d0a0a;color:#f87171}
+  .d-bound{background:#12314a;color:#7dd3fc}
+  .d-unbound{background:#2a2342;color:#c4b5fd}
+  table{width:100%;border-collapse:collapse;font-size:13px;color:#dbe1f0;min-width:720px}
+  thead th{text-align:left;color:#7b82a0;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:10px 8px;border-bottom:1px solid #262a45;white-space:nowrap}
+  tbody td{padding:11px 8px;border-bottom:1px solid #16182a;vertical-align:middle}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  .mono{font-family:'SF Mono',Consolas,monospace;font-size:12px;color:#93c5fd;letter-spacing:.5px}
   small{color:#6b7280}
-  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
-  .loading{color:#8b8ba3;font-size:13px}
-  .err{color:#f87171;font-size:13px}
-  .ok{color:#4ade80;font-size:13px}
+  .refresh-note{font-size:11px;color:#6b7280;margin-top:10px}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#262a45;border-radius:6px}
   .hidden{display:none}
-  #admKey{max-width:320px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>OG<span>xISAI</span> · License Admin</h1>
-  <div class="sub">Mint keys → buyers enter them in the extension → all powers unlock. Revoked keys lose all powers within ~1 second. One key = one device.</div>
+  <div class="top">
+    <div class="logo">OGxISAI<small>LICENSE ADMIN</small></div>
+  </div>
+  <div class="sub">
+    <span>Mint keys → buyers enter them in the extension → all powers unlock. Revoked keys lose powers within ~1s. One key = one device.</span>
+    <span class="legend"><span class="dot dt-bound"></span> Bound</span>
+    <span class="legend"><span class="dot dt-unbound"></span> Unbound</span>
+  </div>
 
   <div class="card">
     <h2>Admin login</h2>
@@ -88,10 +105,13 @@
 
   <div class="card">
     <h2>Keys &amp; status</h2>
+    <div class="row" style="margin-bottom:6px">
+      <div><label>Filter keys</label><input id="keyFilter" type="text" placeholder="Search by key or buyer…" oninput="renderKeys()" disabled></div>
+    </div>
     <div class="loading" id="listMsg">Loading…</div>
     <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>Key</th><th>Plan</th><th>Status</th><th>Created</th><th>Expires</th><th>Device</th><th>Checks</th><th></th></tr></thead>
+      <thead><tr><th>Key</th><th>Plan</th><th>Status</th><th>Created</th><th>Expires</th><th>Buyer</th><th>Device</th><th>Checks</th><th>Actions</th></tr></thead>
       <tbody id="keysBody"></tbody>
     </table>
     </div>
@@ -147,30 +167,46 @@ async function createKey(){
   }catch(e){ m.className='err'; m.textContent='Error: '+e.message; }
 }
 
+let KEY_CACHE=[];
 async function loadKeys(){
   const msg=document.getElementById('listMsg');
   if(!adm()){ msg.textContent='Login to see keys.'; document.getElementById('keysBody').innerHTML=''; return; }
   msg.className='loading'; msg.textContent='Loading…';
   try{
-    const keys=await (await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}})).json();
-    document.getElementById('keysBody').innerHTML = (keys||[]).map(k=>{
-      const st=k.status||'?';
-      const badge='<span class="badge b-'+st+'">'+st.toUpperCase()+'</span>';
-      const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : 'never';
-      const dev = (k.deviceId||'').slice(0,13);
-      return '<tr><td class="mono">'+k.key+'</td><td>'+k.plan+'</td><td>'+badge+'</td>'+
-        '<td><small>'+new Date(k.createdAt||Date.now()).toLocaleDateString()+'</small></td>'+
-        '<td><small>'+exp+'</small></td>'+
-        '<td><small>'+ (k.deviceId?dev+'…':'—') +'</small></td>'+
-        '<td><small>'+(k.verifications||0)+'</small></td>'+
-        '<td>'+
-          '<button class="btn-ghost" onclick="copyKey(\''+k.key+'\')" title="Copy">⧉</button> '+
-          (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):'<small>expired</small>'))+
-          ' <button class="btn-ghost" onclick="delKey(\''+k.key+'\')" title="Delete" style="color:#f87171">🗑</button>'+
-        '</td></tr>';
-    }).join('')||'<tr><td colspan="8"><small>No keys yet.</small></td></tr>';
-    msg.className='hint'; msg.textContent=(keys||[]).length+' key(s) · auto-refresh every 15s';
+    KEY_CACHE=(await (await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}})).json())||[];
+    renderKeys();
+    msg.className='hint'; msg.textContent=KEY_CACHE.length+' key(s) · auto-refresh every 15s';
+    const f=document.getElementById('keyFilter'); if(f) f.disabled=false;
   }catch(e){ msg.className='err'; msg.textContent='Error: '+e.message; }
+}
+function renderKeys(){
+  const q=(document.getElementById('keyFilter').value||'').toUpperCase().trim();
+  const list = q ? KEY_CACHE.filter(k=>k.key.toUpperCase().includes(q)||(k.note||'').toUpperCase().includes(q)) : KEY_CACHE;
+  const html=(list||[]).map(k=>{
+    const st=k.status||'?';
+    const badge='<span class="badge b-'+st+'">'+st.toUpperCase()+'</span>';
+    const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : 'never';
+    const devCell = k.deviceId
+      ? '<span class="badge d-bound" title="'+k.deviceId+'"><span class="dot dt-bound"></span>BOUND</span>'
+      : '<span class="badge d-unbound"><span class="dot dt-unbound"></span>UNBOUND</span>';
+    const notes = k.note ? '<small title="'+k.note+'">'+k.note+'</small>' : '';
+    const act='<div class="actions">'+
+      '<button class="btn-ghost" onclick="copyKey(\''+k.key+'\')" title="Copy key">⧉</button>'+
+      (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):''))+
+      '<button class="btn-ghost" onclick="delKey(\''+k.key+'\')" title="Delete">🗑</button>'+
+      '</div>';
+    return '<tr>'+
+      '<td class="mono">'+k.key+'</td>'+
+      '<td>'+k.plan+'</td>'+
+      '<td>'+badge+'</td>'+
+      '<td><small>'+new Date(k.createdAt||Date.now()).toLocaleDateString()+'</small></td>'+
+      '<td><small>'+exp+'</small></td>'+
+      '<td>'+notes+'</td>'+
+      '<td>'+devCell+'</td>'+
+      '<td><small>'+(k.verifications||0)+'</small></td>'+
+      '<td>'+act+'</td></tr>';
+  }).join('')||'<tr><td colspan="9"><small>No keys found.</small></td></tr>';
+  document.getElementById('keysBody').innerHTML=html;
 }
 async function revokeKey(key){
   const m=document.getElementById('listMsg');

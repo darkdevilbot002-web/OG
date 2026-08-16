@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OGxISAI License Admin</title>
+<style>
+  *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif}
+  body{margin:0;background:#06060c;color:#e6e6f0;min-height:100vh}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 18px 60px}
+  h1{letter-spacing:4px;font-weight:900;font-size:22px;margin:0 0 4px}
+  h1 span{color:#ef4444}
+  .sub{color:#8b8ba3;font-size:13px;margin-bottom:24px}
+  .card{background:#0d0d17;border:1px solid #1e1e30;border-radius:14px;padding:18px;margin-bottom:20px}
+  .card h2{font-size:15px;margin:0 0 14px;color:#fca5a5;letter-spacing:1px;text-transform:uppercase}
+  label{font-size:12px;color:#8b8ba3;display:block;margin:8px 0 4px}
+  input,select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #2a2a3e;background:#0a0a14;color:#fff;font-size:14px}
+  input:focus,select:focus{outline:none;border-color:#ef4444}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:130px}
+  button{cursor:pointer;border:0;border-radius:8px;font-weight:700;padding:11px 14px;font-size:13px;letter-spacing:1px}
+  .btn-danger{background:linear-gradient(135deg,#7f1d1d,#dc2626);color:#fff}
+  .btn-ghost{background:#1a1a2a;color:#cbd5e1;border:1px solid #2a2a3e}
+  .btn-ghost:hover{background:#23233a}
+  .hint{font-size:11px;color:#8b8ba3;margin-top:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:#8b8ba3;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:8px;border-bottom:1px solid #1a1a2c}
+  td{padding:9px 8px;border-bottom:1px solid #131322;vertical-align:top}
+  .mono{font-family:Consolas,monospace;font-size:12px;color:#93c5fd}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px}
+  .b-active{background:#14532d;color:#4ade80}
+  .b-expired{background:#78350f;color:#fbbf24}
+  .b-revoked{background:#450a0a;color:#f87171}
+  small{color:#6b7280}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+  .loading{color:#8b8ba3;font-size:13px}
+  .err{color:#f87171;font-size:13px}
+  .ok{color:#4ade80;font-size:13px}
+  #admKey{max-width:320px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>OG<span>xISAI</span> · License Admin</h1>
+  <div class="sub">Mint keys → buyers enter them in the extension → all powers unlock. Revoked keys lose all powers within ~1 second. One key = one device.</div>
+
+  <div class="card">
+    <h2>Admin authentication</h2>
+    <label>Admin key (ADMIN_KEY from your Render env)</label>
+    <div class="row">
+      <input id="admKey" type="password" placeholder="x-admin-key">
+      <button class="btn-ghost" onclick="saveAdm()">Save</button>
+      <button class="btn-ghost" onclick="clearAdm()">Clear</button>
+    </div>
+    <div class="hint">Stored only in this browser (localStorage). Used in every request header.</div>
+  </div>
+
+  <div class="card">
+    <h2>Create new key</h2>
+    <div class="row">
+      <div>
+        <label>Plan</label>
+        <select id="plan"><option value="pro">pro (all powers)</option></select>
+      </div>
+      <div>
+        <label>Duration (days)</label>
+        <input id="days" type="number" min="0" placeholder="e.g. 10, 30, 0=unlimited">
+      </div>
+      <div>
+        <label>Note / buyer</label>
+        <input id="note" type="text" placeholder="optional buyer name">
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end">
+        <button class="btn-danger" onclick="createKey()">CREATE KEY</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn-ghost" onclick="quick(10)">10 days</button>
+      <button class="btn-ghost" onclick="quick(30)">30 days</button>
+      <button class="btn-ghost" onclick="quick(0)">∞ unlimited</button>
+      <button class="btn-ghost" onclick="loadKeys()">↻ Refresh list</button>
+    </div>
+    <div class="hint" id="makeMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Keys &amp; status</h2>
+    <div class="loading" id="listMsg">Loading…</div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Key</th><th>Plan</th><th>Status</th><th>Created</th><th>Expires</th><th>Device</th><th>Checks</th><th></th></tr></thead>
+      <tbody id="keysBody"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+<script>
+const base = location.origin;
+function adm() { return document.getElementById('admKey').value.trim(); }
+function saveAdm(){ localStorage.setItem('ogx_adm', adm()); flash(); }
+function clearAdm(){ localStorage.setItem('ogx_adm',''); document.getElementById('admKey').value=''; flash(); }
+function flash(){ const m=document.getElementById('makeMsg'); m.className='ok'; m.textContent='Admin key saved.'; setTimeout(()=>m.textContent='',1600); }
+window.onload=()=>{ document.getElementById('admKey').value = localStorage.getItem('ogx_adm')||''; loadKeys(); };
+
+function api(path, body){
+  return fetch(base+path, {method:'POST', headers:{'Content-Type':'application/json','x-admin-key':adm()}, body: JSON.stringify(body||{})})
+    .then(r=>r.json()).then(j=>{ if(j.error) throw new Error(j.error); return j; });
+}
+function quick(d){ document.getElementById('days').value=d; }
+
+async function createKey(){
+  const m=document.getElementById('makeMsg');
+  if(!adm()){ m.className='err'; m.textContent='Enter your ADMIN_KEY first.'; return; }
+  try{
+    const days=parseInt(document.getElementById('days').value||'0',10);
+    const r=await api('/api/keys',{plan:document.getElementById('plan').value, days, note:document.getElementById('note').value});
+    m.className='ok';
+    m.textContent='Created: '+r.key+(days>0?' ('+days+' days)': ' (lifetime)')+'   → send this to the buyer.';
+    document.getElementById('days').value=''; document.getElementById('note').value='';
+    loadKeys();
+  }catch(e){ m.className='err'; m.textContent='Error: '+e.message; }
+}
+
+async function loadKeys(){
+  const msg=document.getElementById('listMsg');
+  if(!adm()){ msg.textContent='Enter your ADMIN_KEY above to see keys.'; document.getElementById('keysBody').innerHTML=''; return; }
+  msg.className='loading'; msg.textContent='Loading…';
+  try{
+    const keys=await (await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}})).json();
+    document.getElementById('keysBody').innerHTML = (keys||[]).map(k=>{
+      const st=k.status||'?';
+      const badge='<span class="badge b-'+st+'">'+st.toUpperCase()+'</span>';
+      const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : 'never';
+      const dev = (k.deviceId||'').slice(0,13);
+      return '<tr><td class="mono">'+k.key+'</td><td>'+k.plan+'</td><td>'+badge+'</td>'+
+        '<td><small>'+new Date(k.createdAt||Date.now()).toLocaleDateString()+'</small></td>'+
+        '<td><small>'+exp+'</small></td>'+
+        '<td><small>'+ (k.deviceId?dev+'…':'—') +'</small></td>'+
+        '<td><small>'+(k.verifications||0)+'</small></td>'+
+        '<td>'+ (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):'<small>expired</small>')) +'</td></tr>';
+    }).join('')||'<tr><td colspan="8"><small>No keys yet.</small></td></tr>';
+    msg.textContent='';
+  }catch(e){ msg.className='err'; msg.textContent='Error: '+e.message; }
+}
+async function revokeKey(key){
+  const m=document.getElementById('listMsg');
+  if(!confirm('Revoke '+key+'? Buyer loses all powers within ~1s.')) return;
+  try{ await api('/api/keys/revoke',{key}); m.className='ok'; m.textContent='Revoked '+key+' — powers off soon.'; loadKeys(); }
+  catch(e){ m.className='err'; m.textContent='Error: '+e.message; }
+}
+async function activateKey(key){
+  try{ await api('/api/keys/activate',{key}); loadKeys(); }
+  catch(e){ const m=document.getElementById('listMsg'); m.className='err'; m.textContent='Error: '+e.message; }
+}
+setInterval(loadKeys, 15000);
+</script>
+</body>
+</html>

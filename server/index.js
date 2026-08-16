@@ -1,0 +1,111 @@
+/**
+ * OGxISAI License API  —  host this on Render
+ * ─────────────────────────────────────────
+ *  POST /api/verify        body { key, deviceId }     → buyer's popup verifies
+ *  POST /api/keys          header x-admin-key ADMIN   → YOU mint a new key
+ *  GET  /api/keys          header x-admin-key ADMIN   → list all keys
+ *  POST /api/keys/revoke   body { key } + admin hdr   → kill a buyer's key
+ */
+'use strict';
+
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const store = require('./store');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors()); // allow the extension (running on any page) to call us
+app.use(express.json({ limit: '32kb' }));
+app.use(express.static(path.join(__dirname, 'public'))); // admin key page at /
+
+function requireAdmin(req, res, next) {
+  if (req.headers['x-admin-key'] === store.ADMIN_KEY) return next();
+  return res.status(401).json({ error: 'Unauthorized: missing or bad x-admin-key.' });
+}
+
+app.get('/', (req, res) => res.json({ name: 'OGxISAI License API', status: 'ok', time: Date.now() }));
+app.get('/healthz', (req, res) => res.json({ status: 'ok', time: Date.now() }));
+
+/* Buyers' extension posts the key here. */
+app.post('/api/verify', async (req, res) => {
+  const { key, deviceId } = req.body || {};
+  const result = await store.verify(key, deviceId);
+  res.status(result.valid ? 200 : 401).json(result);
+});
+
+/* ─── Server-authoritative session (this is what the extension uses) ───
+   The client MUST refresh before the token expires. Every refresh re-checks
+   the key in the store, so a revoked/expired key kills the session on the
+   next heartbeat → the extension tears all powers down instantly. */
+
+app.post('/api/session', async (req, res) => {
+  const { key, deviceId } = req.body || {};
+  const result = await store.verify(key, deviceId);
+  if (!result.valid) return res.status(401).json(result);
+  const exp = Date.now() + store.SESSION_TTL_MS;
+  const token = store.signSession({
+    key: (key || '').trim().toUpperCase(),
+    deviceId: result.deviceId,
+    plan: result.plan,
+    exp,
+  });
+  res.json({ valid: true, token, plan: result.plan, features: result.features, expiresAt: result.expiresAt, ttlMs: store.SESSION_TTL_MS });
+});
+
+app.post('/api/session/refresh', async (req, res) => {
+  const { token, key, deviceId } = req.body || {};
+  const payload = store.parseSession(token);
+  if (!payload) return res.status(401).json({ valid: false, code: 'BADTOKEN', message: 'Session expired or invalid.' });
+  if (String(payload.key) !== String((key || '').trim().toUpperCase())) {
+    return res.status(401).json({ valid: false, code: 'MISMATCH', message: 'Session does not match this key.' });
+  }
+  // Critical: re-verify against the store so device-binding + revocation stick immediately.
+  const result = await store.verify(payload.key, payload.dev);
+  if (!result.valid) return res.status(401).json(result);
+  const exp = Date.now() + store.SESSION_TTL_MS;
+  const next = store.signSession({ key: payload.key, deviceId: payload.dev, plan: result.plan, exp });
+  res.json({ valid: true, token: next, plan: result.plan, features: result.features, expiresAt: result.expiresAt, ttlMs: store.SESSION_TTL_MS });
+});
+
+/* ── Admin only ─────────────────────────────────────────────── */
+app.post('/api/keys', requireAdmin, async (req, res) => {
+  const { plan = 'pro', days = 0, note = '' } = req.body || {};
+  const data = await store.create({ plan, days, note });
+  res.status(201).json(data);
+});
+
+app.get('/api/keys', requireAdmin, async (_req, res) => {
+  res.json(await store.list());
+});
+
+app.post('/api/keys/revoke', requireAdmin, async (req, res) => {
+  const { key } = req.body || {};
+  if (!key) return res.status(400).json({ error: 'key is required.' });
+  const found = await store.revoke(key);
+  return res.status(found ? 200 : 404).json({ ok: found, key });
+});
+
+app.post('/api/keys/activate', requireAdmin, async (req, res) => {
+  const { key } = req.body || {};
+  if (!key) return res.status(400).json({ error: 'key is required.' });
+  const ok = await store.activate(key);
+  return res.status(ok ? 200 : 404).json({ ok, key });
+});
+
+async function start() {
+  await store.init();
+  app.listen(PORT, () => {
+    console.log('OGxISAI license server running.');
+    console.log(`  → port      : ${PORT}`);
+    console.log(`  → storage   : ${process.env.MONGODB_URI ? 'MongoDB' : 'JSON file (data/keys.json)'}`);
+    console.log(`  → ADMIN_KEY : ${store.ADMIN_KEY}`);
+    console.log('  Mint a key:  curl -X POST https://<your-app>.onrender.com/api/keys -H "Content-Type: application/json" -H "x-admin-key: <ADMIN_KEY>" -d \'{"days":30}\'');
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start server:', err.message);
+  process.exit(1);
+});

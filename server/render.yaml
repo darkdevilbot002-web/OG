@@ -1,0 +1,26 @@
+# Render Blueprint — deploy this backend to Render.com
+# Option A: New Blueprint from this repo via https://render.com (recommended).
+#
+# IMPORTANT:
+#   • Set ADMIN_KEY to a long random secret (e.g. from render.com/protonvpn or `openssl rand -hex 24`).
+#   • For durable keys across restarts, set MONGODB_URI (free MongoDB Atlas)
+#     OR list pre-made keys in SEED_KEYS so they survive every boot.
+services:
+  - type: web
+    name: ogxisai-license
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: ADMIN_KEY
+        value: change-me-to-a-long-random-secret
+        sync: false
+      - key: SEED_KEYS
+        value: ""
+        sync: false
+      - key: MONGODB_URI
+        value: ""
+        sync: false

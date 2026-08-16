@@ -156,7 +156,18 @@ window.onload=()=>{ afterAuth(); if(adm()) loadKeys(); };
 
 function api(path, body){
   return fetch(base+path, {method:'POST', headers:{'Content-Type':'application/json','x-admin-key':adm()}, body: JSON.stringify(body||{})})
-    .then(r=>r.json()).then(j=>{ if(j.error) throw new Error(j.error); return j; });
+    .then(r=>r.json()).then(j=>{
+      if(j && j.error && /Unauthorized/i.test(j.error)){ handleUnauthorized(); throw new Error('Session expired — please log in again.'); }
+      if(j && j.error) throw new Error(j.error);
+      return j;
+    });
+}
+function handleUnauthorized(msg){
+  localStorage.removeItem('ogx_adm'); localStorage.removeItem('ogx_adm_user');
+  afterAuth();
+  const lm=document.getElementById('listMsg'); if(lm){ lm.className='err'; lm.textContent=msg||'Session expired or bad admin key — log in again.'; }
+  const mm=document.getElementById('makeMsg'); if(mm) mm.textContent='';
+  document.getElementById('keysBody').innerHTML='';
 }
 function quick(d){ document.getElementById('days').value=d; }
 
@@ -179,7 +190,10 @@ async function loadKeys(){
   if(!adm()){ msg.textContent='Login to see keys.'; document.getElementById('keysBody').innerHTML=''; return; }
   msg.className='loading'; msg.textContent='Loading…';
   try{
-    KEY_CACHE=(await (await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}})).json())||[];
+    const res=await fetch(base+'/api/keys',{headers:{'x-admin-key':adm()}});
+    if(res.status===401){ KEY_CACHE=[]; handleUnauthorized(); return; }
+    const j=await res.json();
+    KEY_CACHE=Array.isArray(j)?j:[];
     renderKeys();
     msg.className='hint'; msg.textContent=KEY_CACHE.length+' key(s) · auto-refresh every 15s';
     const f=document.getElementById('keyFilter'); if(f) f.disabled=false;

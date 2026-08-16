@@ -189,7 +189,10 @@ function renderKeys(){
   const q=(document.getElementById('keyFilter').value||'').toUpperCase().trim();
   const list = q ? KEY_CACHE.filter(k=>k.key.toUpperCase().includes(q)||(k.note||'').toUpperCase().includes(q)) : KEY_CACHE;
   const html=(list||[]).map(k=>{
-    const st=k.status||'?';
+    let st=k.status;
+    if(!st || st==='?'){  // fallback: compute real status ourselves if the backend didn't send it
+      st = (k.active===false) ? 'revoked' : (k.expiresAt && Date.now()>k.expiresAt ? 'expired' : 'active');
+    }
     const badge='<span class="badge b-'+st+'">'+st.toUpperCase()+'</span>';
     const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : 'never';
     const devCell = k.deviceId

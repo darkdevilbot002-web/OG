@@ -28,7 +28,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body || {}),
         })
-          .then((r) => r.json())
+          .then((r) => r.text().then((txt) => {
+            let j = null;
+            try { j = JSON.parse(txt); } catch (_) {}
+            if (j && typeof j === 'object') { j.http = r.status; return j; }
+            return { network: true, http: r.status, body: txt.slice(0, 200) };
+          }))
           .catch(() => ({ network: true }));
       },
     };

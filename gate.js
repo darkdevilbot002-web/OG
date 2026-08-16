@@ -50,6 +50,13 @@
       body: JSON.stringify(body || {}),
     }).then((r) => r.json()).catch(() => ({ network: true }));
   }
+function errText(res, fb) {
+    if (!res) return fb || 'Unknown error.';
+    if (res.network && res.http) return 'Server error HTTP ' + res.http + ' — maybe Render is running old code. (' + (res.error || res.body || '') + ')';
+    if (res.network) return 'No response from server: ' + (API_BASE || 'NO-URL') + '. Check internet / Render URL.';
+    const pre = res.code ? '[' + res.code + '] ' : '';
+    return pre + (res.message || res.error || fb || 'Key invalid, expired or revoked.');
+  }
 const CSS = `
   #bm-root.locked{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:auto;font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#05050a;}
   #bm-root.locked .bm-lic-bg{position:absolute;inset:0;overflow:hidden;opacity:.32;}
@@ -111,11 +118,9 @@ const CSS = `
         } else {
           pending(false);
           msg.classList.add('err');
-          const code = res && res.code;
-          const detail = (res && (res.message || res.error)) || 'Key invalid, expired or revoked.';
-          msg.textContent = code ? ('[' + code + '] ' + detail) : detail;
+          msg.textContent = errText(res, 'Key invalid, expired or revoked.');
         }
-      }).catch(() => { pending(false); msg.classList.add('err'); msg.textContent = 'Could not reach the license server.'; });
+      }).catch(() => { pending(false); msg.classList.add('err'); msg.textContent = 'Could not reach the license server (network).'; });
     }
     btn.addEventListener('click', run);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
@@ -141,8 +146,8 @@ const CSS = `
       if (has) {
         api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
           if (res && res.ok && res.code) runEngine(res.code);
-          else buildLock((res && res.message) || 'License no longer valid.');
-        }).catch(() => buildLock('Could not reach the license server.'));
+          else buildLock(errText(res, 'License no longer valid.'));
+        }).catch(() => buildLock('Could not reach the license server (network).'));
       } else {
         buildLock();
       }

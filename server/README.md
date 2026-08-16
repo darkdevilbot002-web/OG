@@ -17,14 +17,26 @@ unlock it.
 ## Deploy on Render
 1. Push this folder's contents to a repo (include `server/`).
 2. On Render → **New → Blueprint** (or Web Service) → your repo → root dir = `server/`.
-   `render.yaml` is included for Blueprint deploy.
-3. Set env vars (Blueprint does it from `render.yaml`):
-   - `ADMIN_KEY` = a long random secret (you will use it to mint keys).
-   - `MONGODB_URI` = *(recommended)* free MongoDB Atlas string so keys survive
-     restarts. If you leave it empty, keys live in `data/keys.json` (ephemeral on
-     the free plan — a restart wipes them).
+   `render.yaml` (repo root) is provided for Blueprint deploy.
+3. Set env vars:
+   - `ADMIN_USER` = admin panel username (default `OG`).
+   - `ADMIN_PASS` = admin panel password (default `OG@098`) — **change this**.
+   - `ADMIN_KEY` = long random secret (returned by `/api/login` and used as the admin token).
+   - `SESSION_SECRET` = long random string (signs license sessions).
    - `SEED_KEYS` = *(optional)* comma-separated keys to recreate after restarts.
 4. Note the app URL, e.g. `https://ogxisai-license.onrender.com`.
+
+> **Storage** — keys live in a **SQLite** file at `server/data/keys.db`. On Render's
+> **free** tier the disk is ephemeral: **a restart/redeploy wipes keys created at runtime**.
+> Two ways to keep keys: (a) set `SEED_KEYS` so your permanent keys are recreated every
+> boot, or (b) add a **persistent disk** to your Render service with mount point `server/data`.
+
+## Manage keys in the browser (admin page)
+Open your live URL → **login** with `ADMIN_USER` / `ADMIN_PASS` → you can:
+- **Create** keys (10 days / 30 days / ∞ lifetime, or any number).
+- **See every key's status** (Active / Expired / Revoked), plan, created, expiry,
+  bound device, and verification count.
+- **Revoke** (powers off in ~1s) or **re-activate** any key with one click.
 
 ## Mint keys (you) — after deploying
 ```bash

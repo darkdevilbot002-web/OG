@@ -107,7 +107,8 @@ async function start() {
   app.listen(PORT, () => {
     console.log('OGxISAI license server running.');
     console.log(`  → port      : ${PORT}`);
-    console.log(`  → storage   : ${process.env.MONGODB_URI ? 'MongoDB' : 'JSON file (data/keys.json)'}`);
+    console.log('  → storage   : SQLite (server/data/keys.db)');
+    console.log(`  → admin user: ${store.ADMIN_USER} (login on the / admin page)`);
     console.log(`  → ADMIN_KEY : ${store.ADMIN_KEY}`);
     console.log('  Mint a key:  curl -X POST https://<your-app>.onrender.com/api/keys -H "Content-Type: application/json" -H "x-admin-key: <ADMIN_KEY>" -d \'{"days":30}\'');
   });

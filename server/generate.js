@@ -30,7 +30,6 @@ const store = require('./store');
   console.log(`  expires: ${record.expiresAt ? new Date(record.expiresAt).toISOString() : 'never (lifetime)'}`);
   console.log('Send this key to the buyer — no free tier tricks survive.');
 
-  store.mongoClient && store.mongoClient.close && (await store.mongoClient.close());
   process.exit(0);
 })().catch((e) => {
   console.error(e.message);

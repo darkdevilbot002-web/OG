@@ -23,7 +23,5 @@ services:
         sync: false
       - key: SESSION_SECRET       # signs the license sessions
         sync: false
-      - key: MONGODB_URI          # (recommended) free MongoDB Atlas for persistence
-        sync: false
       - key: SEED_KEYS            # (optional) comma-separated keys recreated on boot
         sync: false

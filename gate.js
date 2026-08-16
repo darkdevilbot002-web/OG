@@ -111,7 +111,9 @@ const CSS = `
         } else {
           pending(false);
           msg.classList.add('err');
-          msg.textContent = (res && res.message) || 'Invalid, expired or revoked key.';
+          const code = res && res.code;
+          const detail = (res && (res.message || res.error)) || 'Key invalid, expired or revoked.';
+          msg.textContent = code ? ('[' + code + '] ' + detail) : detail;
         }
       }).catch(() => { pending(false); msg.classList.add('err'); msg.textContent = 'Could not reach the license server.'; });
     }

@@ -163,6 +163,15 @@ function activate(k) {
   return true;
 }
 
+function unbind(k) {
+  k = String(k || '').trim().toUpperCase();
+  const rec = get(k);
+  if (!rec) return false;
+  rec.deviceId = null;
+  upsert(rec);
+  return true;
+}
+
 function statusOf(rec) {
   if (!rec) return 'missing';
   if (!rec.active) return 'revoked';
@@ -218,6 +227,7 @@ module.exports = {
   verify,
   revoke,
   activate,
+  unbind,
   statusOf,
   remove,
   list,

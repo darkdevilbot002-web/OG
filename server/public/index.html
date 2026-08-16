@@ -201,6 +201,7 @@ function renderKeys(){
     const notes = k.note ? '<small title="'+k.note+'">'+k.note+'</small>' : '';
     const act='<div class="actions">'+
       '<button class="btn-ghost" onclick="copyKey(\''+k.key+'\')" title="Copy key">⧉</button>'+
+      (k.deviceId ? '<button class="btn-ghost" onclick="unbindKey(\''+k.key+'\')" title="Unbind device">🔓</button>' : '')+
       (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):''))+
       '<button class="btn-ghost" onclick="delKey(\''+k.key+'\')" title="Delete">🗑</button>'+
       '</div>';
@@ -225,6 +226,11 @@ async function revokeKey(key){
 }
 async function activateKey(key){
   try{ await api('/api/keys/activate',{key}); loadKeys(); }
+  catch(e){ const m=document.getElementById('listMsg'); m.className='err'; m.textContent='Error: '+e.message; }
+}
+async function unbindKey(key){
+  if(!confirm('Unbind '+key+'? Its bound device is cleared so it can be activated on another device.')) return;
+  try{ await api('/api/keys/unbind',{key}); document.getElementById('listMsg').className='ok'; document.getElementById('listMsg').textContent='Unbound '+key; loadKeys(); }
   catch(e){ const m=document.getElementById('listMsg'); m.className='err'; m.textContent='Error: '+e.message; }
 }
 function copyKey(key){

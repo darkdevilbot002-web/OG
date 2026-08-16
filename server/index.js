@@ -118,6 +118,13 @@ app.post('/api/keys/activate', requireAdmin, async (req, res) => {
   return res.status(ok ? 200 : 404).json({ ok, key });
 });
 
+app.post('/api/keys/unbind', requireAdmin, async (req, res) => {
+  const { key } = req.body || {};
+  if (!key) return res.status(400).json({ error: 'key is required.' });
+  const ok = await store.unbind(key);
+  return res.status(ok ? 200 : 404).json({ ok, key });
+});
+
 app.post('/api/keys/delete', requireAdmin, async (req, res) => {
   const { key } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key is required.' });

@@ -41,12 +41,10 @@
     else { try { localStorage.setItem(STORE, JSON.stringify(v)); } catch (_) {} }
   }
 
-  function api(path, body) {
-    if (!API_BASE) return Promise.resolve({ network: true });
-    if (bridge && bridge.api) { try { return Promise.resolve(bridge.api(API_BASE, path, body)); } catch (_) {} }
+  function pageHtml(path, body) {
     return new Promise((resolve) => {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 60000) : null; // Render free tier cold-start can take ~60s
       fetch(API_BASE + path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,10 +59,23 @@
       });
     });
   }
+  function api(path, body) {
+    if (!API_BASE) return Promise.resolve({ network: true });
+    try {
+      if (bridge && bridge.api) {
+        return Promise.resolve(bridge.api(API_BASE, path, body)).then((res) => {
+          // hard network failure → second chance via a page-context fetch
+          if (res && res.network && !res.http && !res._status) return pageHtml(path, body);
+          return res;
+        });
+      }
+    } catch (_) {}
+    return pageHtml(path, body);
+  }
 function errText(res, fb) {
     if (!res) return fb || 'Unknown error.';
     if (res.network && res.http) return 'Server error HTTP ' + res.http + ' — maybe Render is running old code. (' + (res.error || res.body || '') + ')';
-    if (res.network) return 'No response from server: ' + (API_BASE || 'NO-URL') + '. Check internet / Render URL.';
+    if (res.network) return 'No response from server: ' + (API_BASE || 'NO-URL') + '. If Render just went idle, give it up to 60–90s and try again.';
     const pre = res.code ? '[' + res.code + '] ' : '';
     return pre + (res.message || res.error || fb || 'Key invalid, expired or revoked.');
   }
@@ -84,6 +95,21 @@ const CSS = `
   .bm-lic-btn:hover{filter:brightness(1.15);}
   .bm-lic-btn:disabled{opacity:.6;cursor:wait;}`;
 
+  function showOverlay(inner) {
+    let o = document.getElementById('ogx-connecting');
+    if (!o) {
+      o = document.createElement('div');
+      o.id = 'ogx-connecting';
+      o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;background:rgba(5,5,10,.97);color:#cbd5e1;font-family:Inter,Arial,sans-serif;text-align:center;pointer-events:auto;';
+      document.body.appendChild(o);
+    }
+    o.innerHTML = '<div style="max-width:300px">' + inner + '</div>';
+  }
+  function hideOverlay() {
+    const o = document.getElementById('ogx-connecting');
+    if (o) o.remove();
+  }
+
   function showRoot(html) {
     let old = document.getElementById('bm-root');
     if (old) old.remove();
@@ -96,6 +122,7 @@ const CSS = `
   }
 
   function buildLock(message) {
+    hideOverlay();
     const st = document.createElement('style');
     st.textContent = CSS;
     (document.head || document.documentElement).appendChild(st);
@@ -124,13 +151,13 @@ const CSS = `
           msg.classList.remove('err'); msg.textContent = '✔ License verified — loading engine…';
           setTimeout(() => { root.remove(); runEngine(res.code); }, 600);
         } else if (res && res.network && tries < maxTry) {
-          setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 14000);
+          setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 9000);
         } else {
           pending(false);
           msg.textContent = errText(res, 'Key invalid, expired or revoked.');
         }
       }).catch(() => {
-        if (tries < maxTry) setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 14000);
+        if (tries < maxTry) setTimeout(() => attempt(key, LIC.deviceId, tries + 1, maxTry), 9000);
         else { pending(false); msg.classList.add('err'); msg.textContent = errText({ network: true }, ''); }
       });
     }
@@ -148,6 +175,7 @@ const CSS = `
 /* Execute the engine code the SERVER returned (only reachable with a valid key). */
   function runEngine(code) {
     if (window.__OGxISAI__) return;
+    hideOverlay();
     let el = document.querySelector('script[data-engine="ogx"]');
     if (el) el.remove();
     el = document.createElement('script');
@@ -159,14 +187,29 @@ const CSS = `
     (document.head || document.documentElement).appendChild(el);
   }
 
+  function bootRetry(attempt) {
+    api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
+      if (res && res.ok && res.code) {
+        hideOverlay();
+        runEngine(res.code);
+      } else if (res && res.network && attempt < 4) {
+        setTimeout(() => bootRetry(attempt + 1), 9000);
+      } else {
+        hideOverlay();
+        buildLock(errText(res, 'License no longer valid.'));
+      }
+    }).catch(() => {
+      if (attempt < 4) setTimeout(() => bootRetry(attempt + 1), 9000);
+      else { hideOverlay(); buildLock('Could not reach the license server (network).'); }
+    });
+  }
+
   function boot() {
     if (!API_BASE) { buildLock('No license server configured in this build.'); return; }
     loadStored().then((has) => {
       if (has) {
-        api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-          if (res && res.ok && res.code) runEngine(res.code);
-          else buildLock(errText(res, 'License no longer valid.'));
-        }).catch(() => buildLock('Could not reach the license server (network).'));
+        showOverlay('🌑<div style="font-size:13px;letter-spacing:.5px">Checking your license…<br><small style="color:#6b7280">First load on Render free can take ~1 min — hang on.</small></div>');
+        bootRetry(1);
       } else {
         buildLock();
       }

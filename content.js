@@ -45,7 +45,7 @@
      Keeping the empty default below means the AS-IS (no-license)
      build still works for testing (lock screen is skipped).
      ────────────────────────────────────────────────────────────── */
-  s.dataset.apiBase = ''; // ⬅ set to e.g. 'https://ogxisai-license.onrender.com'
+  s.dataset.apiBase = 'https://ogxisai-license.onrender.com'; // ⬅ live Render license server
 
   s.onload = () => s.remove();
   (document.head || document.documentElement).appendChild(s);

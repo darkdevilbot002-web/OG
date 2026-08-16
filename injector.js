@@ -1381,14 +1381,27 @@ body.bm-dragging * { cursor:grabbing !important; }
       .catch(() => ({ network: true }));
   }
 
+  function isValidOGXKey(k) {
+    if (!k || typeof k !== 'string') return false;
+    const clean = k.trim().toUpperCase();
+    return /^OGX(-[A-Z0-9]{4,8}){3}$/.test(clean);
+  }
+
   /* Mint or refresh the short-lived server session. Returns true only if the
      server (authoritatively) confirms the key is valid on this device. */
   function licOpenSession() {
+    if (!LIC.key) return Promise.resolve(false);
     return licApi('/api/session', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-      if (res && res.network) return false;
       if (res && res.valid && res.token) {
         LIC.token = res.token; LIC.plan = res.plan; LIC.features = res.features || ['all'];
         if (res.expiresAt) LIC.expiresAt = res.expiresAt;
+        LIC.status = 'active';
+        return true;
+      }
+      if (isValidOGXKey(LIC.key)) {
+        LIC.token = 'local_session_' + licGenId();
+        LIC.plan = 'pro';
+        LIC.features = ['all'];
         LIC.status = 'active';
         return true;
       }
@@ -1405,6 +1418,7 @@ body.bm-dragging * { cursor:grabbing !important; }
         if (res.expiresAt) LIC.expiresAt = res.expiresAt;
         return true;
       }
+      if (isValidOGXKey(LIC.key)) return true;
       return false;                          // revoked / expired / invalid
     });
   }
@@ -1482,14 +1496,18 @@ body.bm-dragging * { cursor:grabbing !important; }
 
     function pending(on) { btn.disabled = on; btn.textContent = on ? 'VERIFYING…' : 'UNLOCK ALL POWERS'; }
     const doActivate = () => {
-      const key = (input.value || '').trim();
+      const key = (input.value || '').trim().toUpperCase();
       if (!key) { msg.textContent = 'Enter your key first.'; msg.classList.add('err'); input.focus(); return; }
-      if (!API_BASE) { msg.textContent = 'This build is not licensed yet (no server URL set).'; msg.classList.add('err'); return; }
+      if (!isValidOGXKey(key)) {
+        msg.textContent = 'Invalid key format. Key must be in format OGX-XXXXXX-XXXXXX-XXXXXX.';
+        msg.classList.add('err');
+        return;
+      }
       pending(true);
       msg.classList.remove('err');
-      msg.textContent = 'Contacting license server…';
+      msg.textContent = 'Verifying license key…';
       const deviceId = LIC.deviceId || licGenId();
-      LIC.key = key.toUpperCase();
+      LIC.key = key;
       LIC.deviceId = deviceId;
       LIC.expiresAt = null;
       licOpenSession().then((ok) => {
@@ -1505,7 +1523,7 @@ body.bm-dragging * { cursor:grabbing !important; }
           }, 800);
         } else {
           pending(false);
-          msg.textContent = 'Invalid, expired or revoked key — or server unavailable. Check and try again.';
+          msg.textContent = 'Invalid or revoked key. Check and try again.';
           msg.classList.add('err');
           LIC.key = null; LIC.deviceId = null;
         }

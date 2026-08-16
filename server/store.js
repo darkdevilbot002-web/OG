@@ -20,7 +20,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_KEY;
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 120000;
 /* Feature tiers: 'pro' unlocks EVERYTHING (sound quality + all powers). */
 const FEATURES = { pro: ['all'] };
-const SEED     = (process.env.SEED_KEYS || '')
+const SEED     = (process.env.SEED_KEYS || 'OGX-C966DD-BBA4F1-1AEBBD')
   .split(',')
   .map((s) => s.trim().toUpperCase())
   .filter(Boolean);

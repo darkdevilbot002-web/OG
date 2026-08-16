@@ -25,3 +25,9 @@ services:
         sync: false
       - key: SEED_KEYS            # (optional) comma-separated keys recreated on boot
         sync: false
+      - key: KEEPALIVE            # 1 = keep the free instance awake (prevents 50s cold starts)
+        value: "1"
+        sync: false
+      - key: PUBLIC_URL           # your live URL, e.g. https://ogxisai-license.onrender.com
+        value: https://ogxisai-license.onrender.com
+        sync: false

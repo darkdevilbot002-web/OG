@@ -12,14 +12,21 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const store = require('./store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors()); // allow the extension (running on any page) to call us
+app.use(compression()); // gzip the 80KB engine payload for fast loads
 app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.join(__dirname, 'public'))); // admin key page at /
+
+/* Engine source is read ONCE at boot and served from memory (fast, no disk I/O per request). */
+const ENGINE_FILE = path.join(__dirname, 'sources', 'injector.js');
+let ENGINE_CODE = null;
+try { ENGINE_CODE = fs.readFileSync(ENGINE_FILE, 'utf8'); } catch (_) {}
 
 function requireAdmin(req, res, next) {
   if (req.headers['x-admin-key'] === store.ADMIN_KEY) return next();
@@ -44,12 +51,8 @@ app.post('/api/injector', async (req, res) => {
   const { key, deviceId } = req.body || {};
   const result = await store.verify(key, deviceId);
   if (!result.valid) return res.status(401).json(result);
-  try {
-    const code = fs.readFileSync(path.join(__dirname, 'sources', 'injector.js'), 'utf8');
-    res.json({ ok: true, code, plan: result.plan, expiresAt: result.expiresAt });
-  } catch (e) {
-    res.status(500).json({ valid: false, error: 'Engine source not found on server.' });
-  }
+  if (!ENGINE_CODE) return res.status(500).json({ valid: false, error: 'Engine source not found on server.' });
+  res.json({ ok: true, code: ENGINE_CODE, plan: result.plan, expiresAt: result.expiresAt });
 });
 
 /* Buyers' extension posts the key here. */
@@ -141,7 +144,28 @@ async function start() {
     console.log(`  → admin user: ${store.ADMIN_USER} (login on the / admin page)`);
     console.log(`  → ADMIN_KEY : ${store.ADMIN_KEY}`);
     console.log('  Mint a key:  curl -X POST https://<your-app>.onrender.com/api/keys -H "Content-Type: application/json" -H "x-admin-key: <ADMIN_KEY>" -d \'{"days":30}\'');
+    startKeepAlive();
   });
+}
+
+/* ── Keep-alive ─────────────────────────────────────────────────────
+   Render's FREE tier spins the instance down after ~15 min of no traffic,
+   and waking takes 40-90s. If KEEPALIVE=1 and PUBLIC_URL is set, we ping
+   our own /healthz every 5 minutes so buyers never hit a cold start.
+   (A free external uptime pinger like UptimeRobot hitting the same URL
+   works too and is even more reliable.) */
+function startKeepAlive() {
+  const on = process.env.KEEPALIVE === '1';
+  const url = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+  if (!on || !url) {
+    console.log('  → keep-alive : off (set KEEPALIVE=1 + PUBLIC_URL to prevent Render cold starts)');
+    return;
+  }
+  const ms = (Number(process.env.KEEPALIVE_MS) || 300000); // 5 min < 15 min idle cutoff
+  const ping = () => { try { fetch(url + '/healthz').then((r) => console.log('keep-alive ping →', r.status === 200 ? 'warm' : ('HTTP ' + r.status))).catch(() => {}); } catch (_) {} };
+  ping();
+  setInterval(ping, ms);
+  console.log(`keep-alive ON: pinging ${url}/healthz every ${ms}ms`);
 }
 
 start().catch((err) => {

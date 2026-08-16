@@ -177,6 +177,13 @@ function list() {
     return { ...rec, status: statusOf(rec) };
   });
 }
+
+function remove(k) {
+  k = String(k || '').trim().toUpperCase();
+  const existed = !!get(k);
+  if (existed) db.prepare('DELETE FROM keys WHERE key = ?').run(k);
+  return existed;
+}
 /* ── Signed, short-lived session tokens ────────────────────
    The client must keep re-verifying (heartbeat). Because every
    refresh looks the key up in the store again, revoking the key
@@ -212,6 +219,7 @@ module.exports = {
   revoke,
   activate,
   statusOf,
+  remove,
   list,
   signSession,
   parseSession,

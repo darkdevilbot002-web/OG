@@ -163,9 +163,13 @@ async function loadKeys(){
         '<td><small>'+exp+'</small></td>'+
         '<td><small>'+ (k.deviceId?dev+'…':'—') +'</small></td>'+
         '<td><small>'+(k.verifications||0)+'</small></td>'+
-        '<td>'+ (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):'<small>expired</small>')) +'</td></tr>';
+        '<td>'+
+          '<button class="btn-ghost" onclick="copyKey(\''+k.key+'\')" title="Copy">⧉</button> '+
+          (st==='active' ? '<button class="btn-danger" onclick="revokeKey(\''+k.key+'\')">Revoke</button>' : (st==='revoked'?('<button class="btn-ghost" onclick="activateKey(\''+k.key+'\')">Activate</button>'):'<small>expired</small>'))+
+          ' <button class="btn-ghost" onclick="delKey(\''+k.key+'\')" title="Delete" style="color:#f87171">🗑</button>'+
+        '</td></tr>';
     }).join('')||'<tr><td colspan="8"><small>No keys yet.</small></td></tr>';
-    msg.textContent='';
+    msg.className='hint'; msg.textContent=(keys||[]).length+' key(s) · auto-refresh every 15s';
   }catch(e){ msg.className='err'; msg.textContent='Error: '+e.message; }
 }
 async function revokeKey(key){
@@ -177,6 +181,19 @@ async function revokeKey(key){
 async function activateKey(key){
   try{ await api('/api/keys/activate',{key}); loadKeys(); }
   catch(e){ const m=document.getElementById('listMsg'); m.className='err'; m.textContent='Error: '+e.message; }
+}
+function copyKey(key){
+  const m=document.getElementById('listMsg');
+  const done=()=>{ m.className='ok'; m.textContent='Copied '+key; setTimeout(()=>{ if(m.className==='ok') m.textContent=''; },2000); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(key).then(done).catch(()=>fallbackCopy(key)); }
+  else fallbackCopy(key);
+  function fallbackCopy(k){ const t=document.createElement('textarea'); t.value=k; document.body.appendChild(t); t.select(); try{ document.execCommand('copy'); done(); }catch(_){} t.remove(); }
+}
+async function delKey(key){
+  const m=document.getElementById('listMsg');
+  if(!confirm('Permanently DELETE '+key+'? This cannot be undone.')) return;
+  try{ await api('/api/keys/delete',{key}); m.className='ok'; m.textContent='Deleted '+key; loadKeys(); }
+  catch(e){ m.className='err'; m.textContent='Error: '+e.message; }
 }
 setInterval(loadKeys, 15000);
 </script>

@@ -85,7 +85,8 @@
 
 
   const s = document.createElement('script');
-  s.src = chrome.runtime.getURL('gate.js'); // tiny launcher — powers load from the server after key success
+  s.src = chrome.runtime.getURL('gate.js'); // launcher
+  s.dataset.injectorUrl = chrome.runtime.getURL('injector.js'); // local encrypted engine resource
   s.dataset.loadingGif = chrome.runtime.getURL('loading.gif');
   s.dataset.headerGif  = chrome.runtime.getURL('header.gif');
 

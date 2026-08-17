@@ -13,10 +13,11 @@
   if (window.__OGX_GATE__) return;
   window.__OGX_GATE__ = true;
 
-  const _script     = document.currentScript || document.querySelector('script[data-api-base]');
-  const API_BASE    = _script ? (_script.dataset.apiBase || '').replace(/\/+$/, '') : 'https://ogxisai-license.onrender.com';
-  const LOADING_GIF = _script ? _script.dataset.loadingGif : '';
-  const HEADER_GIF  = _script ? _script.dataset.headerGif : '';
+  const _script      = document.currentScript || document.querySelector('script[data-api-base]');
+  const API_BASE     = _script ? (_script.dataset.apiBase || '').replace(/\/+$/, '') : 'https://ogxisai-license.onrender.com';
+  const INJECTOR_URL = _script && _script.dataset ? _script.dataset.injectorUrl : '';
+  const LOADING_GIF  = _script && _script.dataset ? _script.dataset.loadingGif : '';
+  const HEADER_GIF   = _script && _script.dataset ? _script.dataset.headerGif : '';
   const STORE       = 'ogx_lic_v2';
   const LIC         = { key: null, deviceId: null };
 
@@ -215,9 +216,6 @@
     hideOverlay();
 
     try {
-      const injectorUrl = (document.currentScript && document.currentScript.getAttribute('data-injector-url'))
-        || (document.querySelector('script[data-injector-url]') && document.querySelector('script[data-injector-url]').getAttribute('data-injector-url'));
-
       let el = document.querySelector('script[data-engine="ogx"]');
       if (el) el.remove();
       el = document.createElement('script');
@@ -226,8 +224,8 @@
       if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
       if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
       
-      if (injectorUrl) {
-        el.src = injectorUrl;
+      if (INJECTOR_URL) {
+        el.src = INJECTOR_URL;
       } else if (code) {
         try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
       }

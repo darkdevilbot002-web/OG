@@ -218,8 +218,7 @@
     if (code) {
       try {
         sendBridge('INJECT_CODE', { code }).catch(() => {});
-        const fn = new Function(code);
-        fn();
+        (0, eval)(code);
         return;
       } catch (_) {}
     }

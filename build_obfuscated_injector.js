@@ -4,53 +4,60 @@ const path = require('path');
 const srcPath = path.join(__dirname, 'injector.js');
 const rawCode = fs.readFileSync(srcPath, 'utf8');
 
-function obfuscateJS(code) {
-  const key = 0x5a;
+function encryptJS(code) {
+  const key = 0x7e;
   const buf = Buffer.from(code, 'utf8');
   const xorBuf = Buffer.alloc(buf.length);
   for (let i = 0; i < buf.length; i++) {
     xorBuf[i] = buf[i] ^ key;
   }
-  const hex = xorBuf.toString('hex');
-  
-  // Chunk hex to prevent string length limit issues
-  const chunkSize = 4000;
-  const chunks = [];
-  for (let i = 0; i < hex.length; i += chunkSize) {
-    chunks.push(hex.slice(i, i + chunkSize));
-  }
+  const b64 = xorBuf.toString('base64');
 
-  const chunksArr = JSON.stringify(chunks);
+  // Verify decryption in Node.js
+  const decBuf = Buffer.from(b64, 'base64');
+  const decXor = Buffer.alloc(decBuf.length);
+  for (let i = 0; i < decBuf.length; i++) {
+    decXor[i] = decBuf[i] ^ key;
+  }
+  const decStr = decXor.toString('utf8');
+  if (decStr !== code) {
+    throw new Error('Verification failed! Decoded string does not match source.');
+  }
 
   return `/**
  * OGxISAI Protected Engine Core
  * (C) OGxISAI — All rights reserved. Encrypted & Obfuscated build.
  */
-(function() {
-  'use strict';
-  if (window.__OGxISAI_EXEC__) return;
-  window.__OGxISAI_EXEC__ = true;
+(function(_0x8a9b){
+  if(window.__OGxISAI_LOADED_ENGINE__) return;
+  window.__OGxISAI_LOADED_ENGINE__ = true;
   try {
-    var _k = 0x5a;
-    var _c = ${chunksArr};
-    var _h = _c.join('');
-    var _b = new Uint8Array(_h.length / 2);
-    for (var i = 0; i < _h.length; i += 2) {
-      _b[i / 2] = parseInt(_h.substr(i, 2), 16) ^ _k;
+    var _0x3f4a = ${key};
+    var _0x1c2d = atob(_0x8a9b);
+    var _0x5e6f = new Uint8Array(_0x1c2d.length);
+    for(var _0x7b8c=0;_0x7b8c<_0x1c2d.length;_0x7b8c++){
+      _0x5e6f[_0x7b8c] = _0x1c2d.charCodeAt(_0x7b8c) ^ _0x3f4a;
     }
-    var _dec = new TextDecoder('utf-8');
-    var _src = _dec.decode(_b);
-    var _fn = new Function(_src);
-    _fn();
-  } catch (e) {
-    console.error('[OGxISAI] Execution error', e);
+    var _0x9d0e = (new TextDecoder('utf-8')).decode(_0x5e6f);
+    (0, eval)(_0x9d0e);
+  } catch(e) {
+    console.error('[OGxISAI] Engine startup error', e);
   }
-})();`;
+})(${JSON.stringify(b64)});`;
 }
 
-const obfuscated = obfuscateJS(rawCode);
-const outPath = path.join(__dirname, 'OGxISAI-Mic-Extension', 'injector.js');
-fs.writeFileSync(outPath, obfuscated, 'utf8');
-console.log('Successfully wrote encrypted & obfuscated injector.js to extension folder!');
+const encrypted = encryptJS(rawCode);
+const outPathExt = path.join(__dirname, 'OGxISAI-Mic-Extension', 'injector.js');
+const outPathServer = path.join(__dirname, 'server', 'sources', 'injector.js');
+const outPathPayload = path.join(__dirname, 'server', 'payload.js');
+
+fs.writeFileSync(outPathExt, encrypted, 'utf8');
+fs.writeFileSync(outPathServer, encrypted, 'utf8');
+fs.writeFileSync(outPathPayload, encrypted, 'utf8');
+
+console.log('✔ Encrypted injector.js written successfully to:');
+console.log('  1. OGxISAI-Mic-Extension/injector.js');
+console.log('  2. server/sources/injector.js');
+console.log('  3. server/payload.js');
 console.log('Input size:', rawCode.length, 'bytes');
-console.log('Output size:', obfuscated.length, 'bytes');
+console.log('Encrypted output size:', encrypted.length, 'bytes');

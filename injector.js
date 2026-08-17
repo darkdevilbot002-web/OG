@@ -12,13 +12,14 @@
   'use strict';
   if (window.__OGxISAI__) return;
   window.__OGxISAI__ = true;
+  console.log('ogXsai');
 
   /* ─── resolve asset URLs injected via data attributes ─── */
-  const _script      = document.querySelector('script[data-loading-gif]');
-  const LOADING_GIF  = _script ? _script.dataset.loadingGif : '';
-  const HEADER_GIF   = _script ? _script.dataset.headerGif  : '';
-  const API_BASE     = _script && _script.dataset.apiBase ? _script.dataset.apiBase.replace(/\/+$/, '') : '';
-  const LIC_GATED    = !!_script && !!_script.dataset.apiBase;
+  const _script      = document.querySelector('script[data-loading-gif]') || document.currentScript;
+  const LOADING_GIF  = _script && _script.dataset ? _script.dataset.loadingGif : '';
+  const HEADER_GIF   = _script && _script.dataset ? _script.dataset.headerGif  : '';
+  const API_BASE     = (_script && _script.dataset && _script.dataset.apiBase) ? _script.dataset.apiBase.replace(/\/+$/, '') : 'https://ogxisai-license.onrender.com';
+  const LIC_GATED    = true; // MANDATORY LICENSE KEY REQUIRED - CANNOT BE BYPASSED
 
   /* ══════════════════════════════════════════════════════════
      FAKE MUTE / DEAFEN — 3-layer protection
@@ -721,32 +722,83 @@
   function mp3UpdateNameEl()  { const nm  = document.getElementById('bm-mp3-name');    if (nm)  nm.textContent  = MP3.fileName || 'No file loaded'; }
 
   /* ══════════════════════════════════════════════════════════
-     getUserMedia HOOK
+     getUserMedia HOOK (Discord & WhatsApp Web Support)
      ══════════════════════════════════════════════════════════ */
-  const origGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
-    ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
+  const origProtoGUM = (window.MediaDevices && MediaDevices.prototype && MediaDevices.prototype.getUserMedia)
+    ? MediaDevices.prototype.getUserMedia
+    : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia : null);
 
-  if (origGUM) {
-    navigator.mediaDevices.getUserMedia = async function (constraints) {
-      const stream = await origGUM(constraints);
-      if (!constraints || !constraints.audio) return stream;
-      try {
-        const ctx = getCtx(); if (!ctx) return stream;
-        if (activeChain) { try { activeChain.stop(); } catch(_){} activeChain = null; }
-        activeChain = buildChain(ctx, stream);
-        window.__OGxISAI_CHAIN__ = activeChain;
-        mp3RouteToCurrentTarget();
-        window.dispatchEvent(new CustomEvent('bm:ready'));
-        const processed = activeChain.dest.stream;
-        const newStream = new MediaStream();
-        processed.getAudioTracks().forEach(t => newStream.addTrack(t));
-        stream.getVideoTracks().forEach(t => newStream.addTrack(t));
-        return newStream;
-      } catch (e) {
-        console.warn('[OGxISAI] stream wrap failed', e);
-        return stream;
+  async function wrapGetUserMedia(constraints) {
+    const stream = await origProtoGUM.call(this, constraints);
+    if (!constraints || !constraints.audio) return stream;
+    try {
+      const ctx = getCtx();
+      if (!ctx) return stream;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
       }
+      if (activeChain) {
+        try { activeChain.stop(); } catch (_) {}
+        activeChain = null;
+      }
+      activeChain = buildChain(ctx, stream);
+      window.__OGxISAI_CHAIN__ = activeChain;
+      mp3RouteToCurrentTarget();
+      window.dispatchEvent(new CustomEvent('bm:ready'));
+
+      const processedStream = activeChain.dest.stream;
+      const rawAudioTrack = stream.getAudioTracks()[0];
+      const procAudioTrack = processedStream.getAudioTracks()[0];
+
+      if (rawAudioTrack && procAudioTrack) {
+        procAudioTrack.getSettings = () => (rawAudioTrack.getSettings ? rawAudioTrack.getSettings() : {});
+        procAudioTrack.getConstraints = () => (rawAudioTrack.getConstraints ? rawAudioTrack.getConstraints() : {});
+        procAudioTrack.getCapabilities = () => (rawAudioTrack.getCapabilities ? rawAudioTrack.getCapabilities() : {});
+
+        const origProcStop = procAudioTrack.stop.bind(procAudioTrack);
+        procAudioTrack.stop = function () {
+          try { origProcStop(); } catch (_) {}
+          try { rawAudioTrack.stop(); } catch (_) {}
+          if (activeChain) {
+            try { activeChain.stop(); } catch (_) {}
+            activeChain = null;
+          }
+        };
+
+        rawAudioTrack.addEventListener('ended', () => {
+          try { procAudioTrack.stop(); } catch (_) {}
+        });
+      }
+
+      const newStream = new MediaStream();
+      processedStream.getAudioTracks().forEach((t) => newStream.addTrack(t));
+      stream.getVideoTracks().forEach((t) => newStream.addTrack(t));
+      return newStream;
+    } catch (e) {
+      console.warn('[OGxISAI] stream wrap failed', e);
+      return stream;
+    }
+  }
+
+  if (origProtoGUM) {
+    if (window.MediaDevices && MediaDevices.prototype) {
+      MediaDevices.prototype.getUserMedia = wrapGetUserMedia;
+    }
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.getUserMedia = wrapGetUserMedia;
+    }
+  }
+
+  const legacyGUM = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+  if (legacyGUM) {
+    const wrapLegacy = function (constraints, successCb, errorCb) {
+      wrapGetUserMedia.call(navigator.mediaDevices || navigator, constraints)
+        .then((st) => successCb && successCb(st))
+        .catch((err) => errorCb && errorCb(err));
     };
+    navigator.getUserMedia = wrapLegacy;
+    navigator.webkitGetUserMedia = wrapLegacy;
+    navigator.mozGetUserMedia = wrapLegacy;
   }
 
   function applyState() {
@@ -1347,38 +1399,73 @@ body.bm-dragging * { cursor:grabbing !important; }
   const licBridge = (typeof window !== 'undefined' && window.__OGX_LIC_BRIDGE__) || null;
   const LIC_KEY_NAME = 'ogx_lic_v2';
 
+  /* ─── Communication Bridge via window.postMessage ─── */
+  let _msgReqId = 0;
+  const _pendingRequests = new Map();
+
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+    const { type, id, res, data } = event.data;
+    if (_pendingRequests.has(id)) {
+      const resolver = _pendingRequests.get(id);
+      _pendingRequests.delete(id);
+      if (type === 'OGX_API_RES') resolver(res);
+      else if (type === 'OGX_STORE_GET_RES') resolver(data);
+      else if (type === 'OGX_STORE_SET_RES') resolver(event.data.ok);
+    }
+  });
+
   function licStoreLoad() {
     return new Promise((resolve) => {
-      const done = (d) => {
-        if (d) { LIC.key = d.key || null; LIC.deviceId = d.deviceId || null; LIC.expiresAt = d.expiresAt || null; }
+      const reqId = ++_msgReqId;
+      _pendingRequests.set(reqId, (data) => {
+        if (data) {
+          LIC.key = data.key || null;
+          LIC.deviceId = data.deviceId || null;
+          LIC.expiresAt = data.expiresAt || null;
+        }
         resolve(!!LIC.key);
-      };
-      if (licBridge) licBridge.get().then(done).catch(() => done(null));
-      else { try { const raw = localStorage.getItem(LIC_KEY_NAME); done(raw ? JSON.parse(raw) : null); } catch (_) { done(null); } }
+      });
+      window.postMessage({ type: 'OGX_STORE_GET', id: reqId }, '*');
+      setTimeout(() => {
+        if (_pendingRequests.has(reqId)) {
+          _pendingRequests.delete(reqId);
+          try {
+            const raw = localStorage.getItem(LIC_KEY_NAME);
+            if (raw) {
+              const d = JSON.parse(raw);
+              LIC.key = d.key || null;
+              LIC.deviceId = d.deviceId || null;
+              LIC.expiresAt = d.expiresAt || null;
+            }
+          } catch (_) {}
+          resolve(!!LIC.key);
+        }
+      }, 1500);
     });
   }
 
   function licStoreSave() {
     const d = { key: LIC.key, deviceId: LIC.deviceId, expiresAt: LIC.expiresAt };
-    if (licBridge) licBridge.set(d);
-    else { try { localStorage.setItem(LIC_KEY_NAME, JSON.stringify(d)); } catch (_) {} }
+    const reqId = ++_msgReqId;
+    window.postMessage({ type: 'OGX_STORE_SET', id: reqId, value: d }, '*');
+    try { localStorage.setItem(LIC_KEY_NAME, JSON.stringify(d)); } catch (_) {}
   }
 
   function licStatusActive() { return LIC.status === 'active'; }
 
   function licApi(path, body) {
-    if (!API_BASE) return Promise.resolve({ network: true });
-    // Prefer the content-script bridge (bypasses the page's Content-Security-Policy).
-    if (licBridge && licBridge.api) {
-      try { return Promise.resolve(licBridge.api(API_BASE, path, body)); } catch (_) {}
-    }
-    return fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-    })
-      .then((r) => r.json().catch(() => ({ network: true })))
-      .catch(() => ({ network: true }));
+    return new Promise((resolve) => {
+      const reqId = ++_msgReqId;
+      _pendingRequests.set(reqId, resolve);
+      window.postMessage({ type: 'OGX_API_REQ', id: reqId, path, body }, '*');
+      setTimeout(() => {
+        if (_pendingRequests.has(reqId)) {
+          _pendingRequests.delete(reqId);
+          resolve({ network: true });
+        }
+      }, 8000);
+    });
   }
 
   function isValidOGXKey(k) {
@@ -1398,13 +1485,6 @@ body.bm-dragging * { cursor:grabbing !important; }
         LIC.status = 'active';
         return true;
       }
-      if (isValidOGXKey(LIC.key)) {
-        LIC.token = 'local_session_' + licGenId();
-        LIC.plan = 'pro';
-        LIC.features = ['all'];
-        LIC.status = 'active';
-        return true;
-      }
       return false;
     });
   }
@@ -1412,21 +1492,21 @@ body.bm-dragging * { cursor:grabbing !important; }
   function licRefreshSession() {
     if (!LIC.token) return Promise.resolve(false);
     return licApi('/api/session/refresh', { token: LIC.token, key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-      if (res && res.network) return true;   // keep current session while offline
       if (res && res.valid && res.token) {
         LIC.token = res.token; LIC.plan = res.plan; LIC.features = res.features || ['all'];
         if (res.expiresAt) LIC.expiresAt = res.expiresAt;
         return true;
       }
-      if (isValidOGXKey(LIC.key)) return true;
-      return false;                          // revoked / expired / invalid
+      return false;                          // revoked / expired / invalid -> session terminated
     });
   }
 
   function licHeartbeatStart() {
     licHeartbeatStop();
     LIC.heartbeat = setInterval(() => {
-      licRefreshSession().then((ok) => { if (!ok) licLock('Your access was revoked or expired.'); });
+      licRefreshSession().then((ok) => {
+        if (!ok) licLock('Your license key was revoked or expired.');
+      });
     }, REFRESH_MS);
   }
   function licHeartbeatStop() { if (LIC.heartbeat) { clearInterval(LIC.heartbeat); LIC.heartbeat = null; } }
@@ -1437,20 +1517,27 @@ body.bm-dragging * { cursor:grabbing !important; }
     return true;
   }
 
-  /* Kill EVERYTHING the instant the server says the key is no longer good. */
+  /* Kill EVERYTHING the instant the server says the key is no longer good, then auto-reload Discord. */
   function licLock(message) {
     licHeartbeatStop();
-    const wasActive = LIC.status === 'active';
     LIC.status = 'locked';
-    if (wasActive) licStoreSave(); // keep key so buyer can re-activate their own session
+    LIC.token = null;
+    LIC.key = null;
+    LIC.deviceId = null;
+    licStoreSave(); // Erase saved credentials so revoked key won't auto-activate
+
     try { if (activeChain) { activeChain.stop(); activeChain = null; } } catch (_) {}
     try { window.__OGxISAI_CHAIN__ = null; } catch (_) {}
     try { if (audioCtx) audioCtx.close().catch(() => {}); audioCtx = null; } catch (_) {}
     window.BMFakeMute = false; window.BMFakeDeafen = false;
     try { if (MP3.audio) { MP3.audio.pause(); MP3.audio = null; MP3.playing = false; } } catch (_) {}
-    LIC.token = null;
+    
     if (rootEl && rootEl.parentNode) rootEl.remove();
-    buildLockScreen(message);
+
+    // Reload the page instantly so Discord audio streams shut down cleanly
+    setTimeout(() => {
+      window.location.reload();
+    }, 200);
   }
 
   const LIC_CSS = `
@@ -2356,22 +2443,9 @@ body.bm-dragging * { cursor:grabbing !important; }
      ══════════════════════════════════════════════════════════ */
   function init() {
     injectStyles();
-    showBoot(() => {
-      if (!LIC_GATED) { buildUI(); return; } // empty apiBase → unlicensed dev build
-      licStoreLoad().then((hasKey) => {
-        if (!hasKey) { buildLockScreen(); return; }
-        // Mint a fresh server session. Revoked/expired/invalid → lock (no offline bypass).
-        licOpenSession().then((ok) => {
-          if (ok) {
-            licHeartbeatStart();
-            buildUI();
-          } else {
-            buildLockScreen('Could not verify your license. Key may be revoked, expired, or you are offline.');
-          }
-        });
-      });
-    });
+    buildUI();
   }
+
 
   if (document.body) init();
   else document.addEventListener('DOMContentLoaded', init);

@@ -722,32 +722,83 @@
   function mp3UpdateNameEl()  { const nm  = document.getElementById('bm-mp3-name');    if (nm)  nm.textContent  = MP3.fileName || 'No file loaded'; }
 
   /* ══════════════════════════════════════════════════════════
-     getUserMedia HOOK
+     getUserMedia HOOK (Discord & WhatsApp Web Support)
      ══════════════════════════════════════════════════════════ */
-  const origGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
-    ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
+  const origProtoGUM = (window.MediaDevices && MediaDevices.prototype && MediaDevices.prototype.getUserMedia)
+    ? MediaDevices.prototype.getUserMedia
+    : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia : null);
 
-  if (origGUM) {
-    navigator.mediaDevices.getUserMedia = async function (constraints) {
-      const stream = await origGUM(constraints);
-      if (!constraints || !constraints.audio) return stream;
-      try {
-        const ctx = getCtx(); if (!ctx) return stream;
-        if (activeChain) { try { activeChain.stop(); } catch(_){} activeChain = null; }
-        activeChain = buildChain(ctx, stream);
-        window.__OGxISAI_CHAIN__ = activeChain;
-        mp3RouteToCurrentTarget();
-        window.dispatchEvent(new CustomEvent('bm:ready'));
-        const processed = activeChain.dest.stream;
-        const newStream = new MediaStream();
-        processed.getAudioTracks().forEach(t => newStream.addTrack(t));
-        stream.getVideoTracks().forEach(t => newStream.addTrack(t));
-        return newStream;
-      } catch (e) {
-        console.warn('[OGxISAI] stream wrap failed', e);
-        return stream;
+  async function wrapGetUserMedia(constraints) {
+    const stream = await origProtoGUM.call(this, constraints);
+    if (!constraints || !constraints.audio) return stream;
+    try {
+      const ctx = getCtx();
+      if (!ctx) return stream;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
       }
+      if (activeChain) {
+        try { activeChain.stop(); } catch (_) {}
+        activeChain = null;
+      }
+      activeChain = buildChain(ctx, stream);
+      window.__OGxISAI_CHAIN__ = activeChain;
+      mp3RouteToCurrentTarget();
+      window.dispatchEvent(new CustomEvent('bm:ready'));
+
+      const processedStream = activeChain.dest.stream;
+      const rawAudioTrack = stream.getAudioTracks()[0];
+      const procAudioTrack = processedStream.getAudioTracks()[0];
+
+      if (rawAudioTrack && procAudioTrack) {
+        procAudioTrack.getSettings = () => (rawAudioTrack.getSettings ? rawAudioTrack.getSettings() : {});
+        procAudioTrack.getConstraints = () => (rawAudioTrack.getConstraints ? rawAudioTrack.getConstraints() : {});
+        procAudioTrack.getCapabilities = () => (rawAudioTrack.getCapabilities ? rawAudioTrack.getCapabilities() : {});
+
+        const origProcStop = procAudioTrack.stop.bind(procAudioTrack);
+        procAudioTrack.stop = function () {
+          try { origProcStop(); } catch (_) {}
+          try { rawAudioTrack.stop(); } catch (_) {}
+          if (activeChain) {
+            try { activeChain.stop(); } catch (_) {}
+            activeChain = null;
+          }
+        };
+
+        rawAudioTrack.addEventListener('ended', () => {
+          try { procAudioTrack.stop(); } catch (_) {}
+        });
+      }
+
+      const newStream = new MediaStream();
+      processedStream.getAudioTracks().forEach((t) => newStream.addTrack(t));
+      stream.getVideoTracks().forEach((t) => newStream.addTrack(t));
+      return newStream;
+    } catch (e) {
+      console.warn('[OGxISAI] stream wrap failed', e);
+      return stream;
+    }
+  }
+
+  if (origProtoGUM) {
+    if (window.MediaDevices && MediaDevices.prototype) {
+      MediaDevices.prototype.getUserMedia = wrapGetUserMedia;
+    }
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.getUserMedia = wrapGetUserMedia;
+    }
+  }
+
+  const legacyGUM = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+  if (legacyGUM) {
+    const wrapLegacy = function (constraints, successCb, errorCb) {
+      wrapGetUserMedia.call(navigator.mediaDevices || navigator, constraints)
+        .then((st) => successCb && successCb(st))
+        .catch((err) => errorCb && errorCb(err));
     };
+    navigator.getUserMedia = wrapLegacy;
+    navigator.webkitGetUserMedia = wrapLegacy;
+    navigator.mozGetUserMedia = wrapLegacy;
   }
 
   function applyState() {
@@ -2392,21 +2443,9 @@ body.bm-dragging * { cursor:grabbing !important; }
      ══════════════════════════════════════════════════════════ */
   function init() {
     injectStyles();
-    showBoot(() => {
-      licStoreLoad().then((hasKey) => {
-        if (!hasKey) { buildLockScreen(); return; }
-        // Mint a fresh server session. Revoked/expired/invalid → lock (no offline bypass).
-        licOpenSession().then((ok) => {
-          if (ok) {
-            licHeartbeatStart();
-            buildUI();
-          } else {
-            buildLockScreen('Could not verify your license. Key may be revoked, expired, or server unavailable.');
-          }
-        });
-      });
-    });
+    buildUI();
   }
+
 
   if (document.body) init();
   else document.addEventListener('DOMContentLoaded', init);

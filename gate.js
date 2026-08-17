@@ -1,24 +1,51 @@
 /**
- * OGxISAI — GATE (the only page-world script shipped to buyers)
+ * OGxISAI — GATE (the launcher shipped in the extension zip)
  * ─────────────────────────────────────────────────────────────
- * This tiny file has NO powers at all. It just:
+ * This file contains NO audio/engine code. It only:
  *   1. Shows a lock screen asking for the activation key.
- *   2. On a valid key → asks the Render backend for the engine code
- *      (POST /api/injector) and ONLY THEN runs the real powers.
- * If the key is revoked/expired, the backend refuses → no engine, no powers.
+ *   2. On valid key -> fetches the engine code from Render backend
+ *      (POST /api/injector) via content-script postMessage bridge.
+ *   3. ONLY THEN runs the engine script in page memory.
+ * Revoking the key on backend stops /api/injector -> engine never loads.
  */
 (function () {
   'use strict';
   if (window.__OGX_GATE__) return;
   window.__OGX_GATE__ = true;
 
-  const _script    = document.currentScript || document.querySelector('script[data-api-base]');
-  const API_BASE   = _script ? (_script.dataset.apiBase || '').replace(/\/+$/, '') : '';
+  const _script     = document.currentScript || document.querySelector('script[data-api-base]');
+  const API_BASE    = _script ? (_script.dataset.apiBase || '').replace(/\/+$/, '') : 'https://ogxisai-license.onrender.com';
   const LOADING_GIF = _script ? _script.dataset.loadingGif : '';
-  const HEADER_GIF = _script ? _script.dataset.headerGif : '';
-  const bridge     = window.__OGX_LIC_BRIDGE__ || null;
-  const STORE      = 'ogx_lic_v2';
-  const LIC        = { key: null, deviceId: null };
+  const HEADER_GIF  = _script ? _script.dataset.headerGif : '';
+  const STORE       = 'ogx_lic_v2';
+  const LIC         = { key: null, deviceId: null };
+
+  const pendingMsgs = new Map();
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || !event.data || event.data.target !== 'OGX_PAGE_SCRIPT') return;
+    const { id, ok, result, error } = event.data;
+    if (pendingMsgs.has(id)) {
+      const { resolve, reject } = pendingMsgs.get(id);
+      pendingMsgs.delete(id);
+      if (ok) resolve(result);
+      else reject(new Error(error || 'Message error'));
+    }
+  });
+
+  function sendBridge(action, payload) {
+    return new Promise((resolve, reject) => {
+      const id = 'ogx_' + Math.random().toString(36).slice(2) + Date.now();
+      pendingMsgs.set(id, { resolve, reject });
+      window.postMessage({ target: 'OGX_CONTENT_SCRIPT', id, action, payload }, '*');
+      setTimeout(() => {
+        if (pendingMsgs.has(id)) {
+          pendingMsgs.delete(id);
+          reject(new Error('Bridge timeout'));
+        }
+      }, 12000);
+    });
+  }
 
   function genId() {
     try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
@@ -29,22 +56,32 @@
   }
 
   function loadStored() {
-    return new Promise((resolve) => {
-      const done = (d) => { if (d) { LIC.key = d.key || null; LIC.deviceId = d.deviceId || null; } resolve(!!LIC.key); };
-      if (bridge) bridge.get().then(done).catch(() => done(null));
-      else { try { const raw = localStorage.getItem(STORE); done(raw ? JSON.parse(raw) : null); } catch (_) { done(null); } }
-    });
+    return sendBridge('GET_STORAGE', null)
+      .then((d) => {
+        if (d) { LIC.key = d.key || null; LIC.deviceId = d.deviceId || null; }
+        return !!LIC.key;
+      })
+      .catch(() => {
+        try {
+          const raw = localStorage.getItem(STORE);
+          const d = raw ? JSON.parse(raw) : null;
+          if (d) { LIC.key = d.key || null; LIC.deviceId = d.deviceId || null; }
+          return !!LIC.key;
+        } catch (_) { return false; }
+      });
   }
+
   function saveStored() {
     const v = { key: LIC.key, deviceId: LIC.deviceId };
-    if (bridge) bridge.set(v);
-    else { try { localStorage.setItem(STORE, JSON.stringify(v)); } catch (_) {} }
+    sendBridge('SET_STORAGE', v).catch(() => {
+      try { localStorage.setItem(STORE, JSON.stringify(v)); } catch (_) {}
+    });
   }
 
   function pageHtml(path, body) {
     return new Promise((resolve) => {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timer = ctrl ? setTimeout(() => ctrl.abort(), 60000) : null; // Render free tier cold-start can take ~60s
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 60000) : null;
       fetch(API_BASE + path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,27 +96,26 @@
       });
     });
   }
+
   function api(path, body) {
     if (!API_BASE) return Promise.resolve({ network: true });
-    try {
-      if (bridge && bridge.api) {
-        return Promise.resolve(bridge.api(API_BASE, path, body)).then((res) => {
-          // hard network failure → second chance via a page-context fetch
-          if (res && res.network && !res.http && !res._status) return pageHtml(path, body);
-          return res;
-        });
-      }
-    } catch (_) {}
-    return pageHtml(path, body);
+    return sendBridge('API_CALL', { base: API_BASE, path, body })
+      .then((res) => {
+        if (res && res.network && !res.http && !res._status) return pageHtml(path, body);
+        return res;
+      })
+      .catch(() => pageHtml(path, body));
   }
-function errText(res, fb) {
+
+  function errText(res, fb) {
     if (!res) return fb || 'Unknown error.';
-    if (res.network && res.http) return 'Server error HTTP ' + res.http + ' — maybe Render is running old code. (' + (res.error || res.body || '') + ')';
-    if (res.network) return 'No response from server: ' + (API_BASE || 'NO-URL') + '. If Render just went idle, give it up to 60–90s and try again.';
+    if (res.network && res.http) return 'Server error HTTP ' + res.http + ' — check backend logs.';
+    if (res.network) return 'No response from server: ' + (API_BASE || 'NO-URL') + '. If Render is starting, retry in a moment.';
     const pre = res.code ? '[' + res.code + '] ' : '';
     return pre + (res.message || res.error || fb || 'Key invalid, expired or revoked.');
   }
-const CSS = `
+
+  const CSS = `
   #bm-root.locked{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:auto;font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#05050a;}
   #bm-root.locked .bm-lic-bg{position:absolute;inset:0;overflow:hidden;opacity:.32;}
   #bm-root.locked .bm-lic-bg img{width:100%;height:100%;object-fit:cover;filter:grayscale(.4) brightness(.45);}
@@ -172,20 +208,36 @@ const CSS = `
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
     input.focus();
   }
-/* Execute the engine code the SERVER returned (only reachable with a valid key). */
+
+  /* Execute the engine code the SERVER returned (only reachable with a valid key). */
   function runEngine(code) {
-    if (window.__OGxISAI__) return;
+    if (!code) return;
+    delete window.__OGxISAI__;
     hideOverlay();
-    let el = document.querySelector('script[data-engine="ogx"]');
-    if (el) el.remove();
-    el = document.createElement('script');
-    el.setAttribute('data-engine', 'ogx');
-    if (LOADING_GIF) el.setAttribute('data-loading-gif', LOADING_GIF);
-    if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
-    if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
-    try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
-    (document.head || document.documentElement).appendChild(el);
+
+    // 1. Try Extension-level Blob injection via content script bridge (bypasses page CSP)
+    sendBridge('INJECT_CODE', { code }).catch(() => {});
+
+    // 2. Try direct evaluation in page memory via Function constructor
+    try {
+      const fn = new Function(code);
+      fn();
+    } catch (_) {}
+
+    // 3. Fallback to DOM script tag insertion
+    try {
+      let el = document.querySelector('script[data-engine="ogx"]');
+      if (el) el.remove();
+      el = document.createElement('script');
+      el.setAttribute('data-engine', 'ogx');
+      if (LOADING_GIF) el.setAttribute('data-loading-gif', LOADING_GIF);
+      if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
+      if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
+      try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
+      (document.head || document.documentElement).appendChild(el);
+    } catch (_) {}
   }
+
 
   function bootRetry(attempt) {
     api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {

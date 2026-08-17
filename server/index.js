@@ -24,9 +24,29 @@ app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.join(__dirname, 'public'))); // admin key page at /
 
 /* Engine source is read ONCE at boot and served from memory (fast, no disk I/O per request). */
-const ENGINE_FILE = path.join(__dirname, 'sources', 'injector.js');
+const ENGINE_FILE_PAYLOAD = path.join(__dirname, 'payload.js');
+const ENGINE_FILE_INJECTOR = path.join(__dirname, 'sources', 'injector.js');
 let ENGINE_CODE = null;
-try { ENGINE_CODE = fs.readFileSync(ENGINE_FILE, 'utf8'); } catch (_) {}
+try {
+  if (fs.existsSync(ENGINE_FILE_PAYLOAD)) {
+    ENGINE_CODE = fs.readFileSync(ENGINE_FILE_PAYLOAD, 'utf8');
+  } else if (fs.existsSync(ENGINE_FILE_INJECTOR)) {
+    ENGINE_CODE = fs.readFileSync(ENGINE_FILE_INJECTOR, 'utf8');
+  }
+} catch (_) {}
+
+
+function getEngineCode() {
+  if (ENGINE_CODE) return ENGINE_CODE;
+  try {
+    if (fs.existsSync(ENGINE_FILE_PAYLOAD)) {
+      ENGINE_CODE = fs.readFileSync(ENGINE_FILE_PAYLOAD, 'utf8');
+    } else if (fs.existsSync(ENGINE_FILE_INJECTOR)) {
+      ENGINE_CODE = fs.readFileSync(ENGINE_FILE_INJECTOR, 'utf8');
+    }
+  } catch (_) {}
+  return ENGINE_CODE;
+}
 
 function requireAdmin(req, res, next) {
   if (req.headers['x-admin-key'] === store.ADMIN_KEY) return next();
@@ -51,9 +71,11 @@ app.post('/api/injector', async (req, res) => {
   const { key, deviceId } = req.body || {};
   const result = await store.verify(key, deviceId);
   if (!result.valid) return res.status(401).json(result);
-  if (!ENGINE_CODE) return res.status(500).json({ valid: false, error: 'Engine source not found on server.' });
-  res.json({ ok: true, code: ENGINE_CODE, plan: result.plan, expiresAt: result.expiresAt });
+  const code = getEngineCode();
+  if (!code) return res.status(500).json({ valid: false, error: 'Engine source not found on server.' });
+  res.json({ ok: true, code: code, plan: result.plan, expiresAt: result.expiresAt });
 });
+
 
 /* Buyers' extension posts the key here. */
 app.post('/api/verify', async (req, res) => {

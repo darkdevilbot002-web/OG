@@ -12,14 +12,11 @@
   'use strict';
   if (window.__OGxISAI__) return;
   window.__OGxISAI__ = true;
-  console.log('ogXsai');
 
   /* ─── resolve asset URLs injected via data attributes ─── */
-  const _script      = document.querySelector('script[data-loading-gif]') || document.currentScript;
-  const LOADING_GIF  = _script && _script.dataset ? _script.dataset.loadingGif : '';
-  const HEADER_GIF   = _script && _script.dataset ? _script.dataset.headerGif  : '';
-  const API_BASE     = (_script && _script.dataset && _script.dataset.apiBase) ? _script.dataset.apiBase.replace(/\/+$/, '') : 'https://ogxisai-license.onrender.com';
-  const LIC_GATED    = true; // MANDATORY LICENSE KEY REQUIRED - CANNOT BE BYPASSED
+  const _script      = document.querySelector('script[data-loading-gif]');
+  const LOADING_GIF  = _script ? _script.dataset.loadingGif : '';
+  const HEADER_GIF   = _script ? _script.dataset.headerGif  : '';
 
   /* ══════════════════════════════════════════════════════════
      FAKE MUTE / DEAFEN — 3-layer protection
@@ -722,83 +719,32 @@
   function mp3UpdateNameEl()  { const nm  = document.getElementById('bm-mp3-name');    if (nm)  nm.textContent  = MP3.fileName || 'No file loaded'; }
 
   /* ══════════════════════════════════════════════════════════
-     getUserMedia HOOK (Discord & WhatsApp Web Support)
+     getUserMedia HOOK
      ══════════════════════════════════════════════════════════ */
-  const origProtoGUM = (window.MediaDevices && MediaDevices.prototype && MediaDevices.prototype.getUserMedia)
-    ? MediaDevices.prototype.getUserMedia
-    : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia : null);
+  const origGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+    ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
 
-  async function wrapGetUserMedia(constraints) {
-    const stream = await origProtoGUM.call(this, constraints);
-    if (!constraints || !constraints.audio) return stream;
-    try {
-      const ctx = getCtx();
-      if (!ctx) return stream;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+  if (origGUM) {
+    navigator.mediaDevices.getUserMedia = async function (constraints) {
+      const stream = await origGUM(constraints);
+      if (!constraints || !constraints.audio) return stream;
+      try {
+        const ctx = getCtx(); if (!ctx) return stream;
+        if (activeChain) { try { activeChain.stop(); } catch(_){} activeChain = null; }
+        activeChain = buildChain(ctx, stream);
+        window.__OGxISAI_CHAIN__ = activeChain;
+        mp3RouteToCurrentTarget();
+        window.dispatchEvent(new CustomEvent('bm:ready'));
+        const processed = activeChain.dest.stream;
+        const newStream = new MediaStream();
+        processed.getAudioTracks().forEach(t => newStream.addTrack(t));
+        stream.getVideoTracks().forEach(t => newStream.addTrack(t));
+        return newStream;
+      } catch (e) {
+        console.warn('[OGxISAI] stream wrap failed', e);
+        return stream;
       }
-      if (activeChain) {
-        try { activeChain.stop(); } catch (_) {}
-        activeChain = null;
-      }
-      activeChain = buildChain(ctx, stream);
-      window.__OGxISAI_CHAIN__ = activeChain;
-      mp3RouteToCurrentTarget();
-      window.dispatchEvent(new CustomEvent('bm:ready'));
-
-      const processedStream = activeChain.dest.stream;
-      const rawAudioTrack = stream.getAudioTracks()[0];
-      const procAudioTrack = processedStream.getAudioTracks()[0];
-
-      if (rawAudioTrack && procAudioTrack) {
-        procAudioTrack.getSettings = () => (rawAudioTrack.getSettings ? rawAudioTrack.getSettings() : {});
-        procAudioTrack.getConstraints = () => (rawAudioTrack.getConstraints ? rawAudioTrack.getConstraints() : {});
-        procAudioTrack.getCapabilities = () => (rawAudioTrack.getCapabilities ? rawAudioTrack.getCapabilities() : {});
-
-        const origProcStop = procAudioTrack.stop.bind(procAudioTrack);
-        procAudioTrack.stop = function () {
-          try { origProcStop(); } catch (_) {}
-          try { rawAudioTrack.stop(); } catch (_) {}
-          if (activeChain) {
-            try { activeChain.stop(); } catch (_) {}
-            activeChain = null;
-          }
-        };
-
-        rawAudioTrack.addEventListener('ended', () => {
-          try { procAudioTrack.stop(); } catch (_) {}
-        });
-      }
-
-      const newStream = new MediaStream();
-      processedStream.getAudioTracks().forEach((t) => newStream.addTrack(t));
-      stream.getVideoTracks().forEach((t) => newStream.addTrack(t));
-      return newStream;
-    } catch (e) {
-      console.warn('[OGxISAI] stream wrap failed', e);
-      return stream;
-    }
-  }
-
-  if (origProtoGUM) {
-    if (window.MediaDevices && MediaDevices.prototype) {
-      MediaDevices.prototype.getUserMedia = wrapGetUserMedia;
-    }
-    if (navigator.mediaDevices) {
-      navigator.mediaDevices.getUserMedia = wrapGetUserMedia;
-    }
-  }
-
-  const legacyGUM = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-  if (legacyGUM) {
-    const wrapLegacy = function (constraints, successCb, errorCb) {
-      wrapGetUserMedia.call(navigator.mediaDevices || navigator, constraints)
-        .then((st) => successCb && successCb(st))
-        .catch((err) => errorCb && errorCb(err));
     };
-    navigator.getUserMedia = wrapLegacy;
-    navigator.webkitGetUserMedia = wrapLegacy;
-    navigator.mozGetUserMedia = wrapLegacy;
   }
 
   function applyState() {
@@ -1372,256 +1318,6 @@ body.bm-dragging * { cursor:grabbing !important; }
   }
 
   /* ══════════════════════════════════════════════════════════
-     LICENSE GATE — SERVER-AUTHORITATIVE (backend on Render)
-     The audio/processing runs on the device, but every real power is
-     gated by a short-lived HMAC session token the server mints. The
-     client must refresh that session on a heartbeat; each refresh
-     re-validates the key in the store. Revoking the key → next heartbeat
-     fails → licLock() tears ALL powers + audio down instantly.
-     Without a valid key there is NO access at all (lock screen only).
-     ══════════════════════════════════════════════════════════ */
-  const REFRESH_MS = 1000; // revocation latency ≈ this (~1s default)
-  const LIC = {
-    status: 'locked',      // 'locked' | 'active'
-    key: null, deviceId: null, plan: null,
-    features: [], expiresAt: null,
-    token: null, heartbeat: null,
-  };
-
-  function licGenId() {
-    try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-    });
-  }
-
-  const licBridge = (typeof window !== 'undefined' && window.__OGX_LIC_BRIDGE__) || null;
-  const LIC_KEY_NAME = 'ogx_lic_v2';
-
-  /* ─── Communication Bridge via window.postMessage ─── */
-  let _msgReqId = 0;
-  const _pendingRequests = new Map();
-
-  window.addEventListener('message', (event) => {
-    if (!event.data || typeof event.data !== 'object') return;
-    const { type, id, res, data } = event.data;
-    if (_pendingRequests.has(id)) {
-      const resolver = _pendingRequests.get(id);
-      _pendingRequests.delete(id);
-      if (type === 'OGX_API_RES') resolver(res);
-      else if (type === 'OGX_STORE_GET_RES') resolver(data);
-      else if (type === 'OGX_STORE_SET_RES') resolver(event.data.ok);
-    }
-  });
-
-  function licStoreLoad() {
-    return new Promise((resolve) => {
-      const reqId = ++_msgReqId;
-      _pendingRequests.set(reqId, (data) => {
-        if (data) {
-          LIC.key = data.key || null;
-          LIC.deviceId = data.deviceId || null;
-          LIC.expiresAt = data.expiresAt || null;
-        }
-        resolve(!!LIC.key);
-      });
-      window.postMessage({ type: 'OGX_STORE_GET', id: reqId }, '*');
-      setTimeout(() => {
-        if (_pendingRequests.has(reqId)) {
-          _pendingRequests.delete(reqId);
-          try {
-            const raw = localStorage.getItem(LIC_KEY_NAME);
-            if (raw) {
-              const d = JSON.parse(raw);
-              LIC.key = d.key || null;
-              LIC.deviceId = d.deviceId || null;
-              LIC.expiresAt = d.expiresAt || null;
-            }
-          } catch (_) {}
-          resolve(!!LIC.key);
-        }
-      }, 1500);
-    });
-  }
-
-  function licStoreSave() {
-    const d = { key: LIC.key, deviceId: LIC.deviceId, expiresAt: LIC.expiresAt };
-    const reqId = ++_msgReqId;
-    window.postMessage({ type: 'OGX_STORE_SET', id: reqId, value: d }, '*');
-    try { localStorage.setItem(LIC_KEY_NAME, JSON.stringify(d)); } catch (_) {}
-  }
-
-  function licStatusActive() { return LIC.status === 'active'; }
-
-  function licApi(path, body) {
-    return new Promise((resolve) => {
-      const reqId = ++_msgReqId;
-      _pendingRequests.set(reqId, resolve);
-      window.postMessage({ type: 'OGX_API_REQ', id: reqId, path, body }, '*');
-      setTimeout(() => {
-        if (_pendingRequests.has(reqId)) {
-          _pendingRequests.delete(reqId);
-          resolve({ network: true });
-        }
-      }, 8000);
-    });
-  }
-
-  function isValidOGXKey(k) {
-    if (!k || typeof k !== 'string') return false;
-    const clean = k.trim().toUpperCase();
-    return /^OGX(-[A-Z0-9]{4,8}){3}$/.test(clean);
-  }
-
-  /* Mint or refresh the short-lived server session. Returns true only if the
-     server (authoritatively) confirms the key is valid on this device. */
-  function licOpenSession() {
-    if (!LIC.key) return Promise.resolve(false);
-    return licApi('/api/session', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-      if (res && res.valid && res.token) {
-        LIC.token = res.token; LIC.plan = res.plan; LIC.features = res.features || ['all'];
-        if (res.expiresAt) LIC.expiresAt = res.expiresAt;
-        LIC.status = 'active';
-        return true;
-      }
-      return false;
-    });
-  }
-
-  function licRefreshSession() {
-    if (!LIC.token) return Promise.resolve(false);
-    return licApi('/api/session/refresh', { token: LIC.token, key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-      if (res && res.valid && res.token) {
-        LIC.token = res.token; LIC.plan = res.plan; LIC.features = res.features || ['all'];
-        if (res.expiresAt) LIC.expiresAt = res.expiresAt;
-        return true;
-      }
-      return false;                          // revoked / expired / invalid -> session terminated
-    });
-  }
-
-  function licHeartbeatStart() {
-    licHeartbeatStop();
-    LIC.heartbeat = setInterval(() => {
-      licRefreshSession().then((ok) => {
-        if (!ok) licLock('Your license key was revoked or expired.');
-      });
-    }, REFRESH_MS);
-  }
-  function licHeartbeatStop() { if (LIC.heartbeat) { clearInterval(LIC.heartbeat); LIC.heartbeat = null; } }
-
-  /* Gate: refuse any power action unless a live server session exists. */
-  function licGuard() {
-    if (!licStatusActive()) { licLock('Session no longer valid.'); return false; }
-    return true;
-  }
-
-  /* Kill EVERYTHING the instant the server says the key is no longer good, then auto-reload Discord. */
-  function licLock(message) {
-    licHeartbeatStop();
-    LIC.status = 'locked';
-    LIC.token = null;
-    LIC.key = null;
-    LIC.deviceId = null;
-    licStoreSave(); // Erase saved credentials so revoked key won't auto-activate
-
-    try { if (activeChain) { activeChain.stop(); activeChain = null; } } catch (_) {}
-    try { window.__OGxISAI_CHAIN__ = null; } catch (_) {}
-    try { if (audioCtx) audioCtx.close().catch(() => {}); audioCtx = null; } catch (_) {}
-    window.BMFakeMute = false; window.BMFakeDeafen = false;
-    try { if (MP3.audio) { MP3.audio.pause(); MP3.audio = null; MP3.playing = false; } } catch (_) {}
-    
-    if (rootEl && rootEl.parentNode) rootEl.remove();
-
-    // Reload the page instantly so Discord audio streams shut down cleanly
-    setTimeout(() => {
-      window.location.reload();
-    }, 200);
-  }
-
-  const LIC_CSS = `
-  #bm-root.locked{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:auto;font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#05050a;}
-  #bm-root.locked .bm-lic-bg{position:absolute;inset:0;overflow:hidden;opacity:.32;}
-  #bm-root.locked .bm-lic-bg img{width:100%;height:100%;object-fit:cover;filter:grayscale(.4) brightness(.45);}
-  .bm-lic-card{position:relative;z-index:2;width:min(360px,88vw);padding:38px 26px 30px;text-align:center;border-radius:18px;border:1px solid rgba(220,38,38,.45);background:linear-gradient(160deg,#0b0f1e,rgba(20,8,14,.95));box-shadow:0 0 60px rgba(220,38,38,.25),0 24px 60px rgba(0,0,0,.8);}
-  .bm-lic-moon{font-size:56px;line-height:1;filter:drop-shadow(0 0 26px rgba(220,38,38,.8));}
-  .bm-lic-title{font-weight:900;font-size:26px;letter-spacing:8px;color:#fff;margin-top:10px;text-shadow:0 0 18px rgba(220,38,38,.7);}
-  .bm-lic-sub{font-size:11px;letter-spacing:4px;color:#f87171;text-transform:uppercase;margin:8px 0 22px;}
-  .bm-lic-input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(248,113,113,.4);background:rgba(0,0,0,.5);color:#fff;font-size:15px;letter-spacing:1px;text-align:center;outline:none;box-sizing:border-box;}
-  .bm-lic-input:focus{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2);}
-  .bm-lic-input::placeholder{color:#6b7280;}
-  .bm-lic-msg{margin:12px 4px;font-size:12px;color:#cbd5e1;min-height:16px;line-height:1.4;}
-  .bm-lic-msg.err{color:#fca5a5;}
-  .bm-lic-btn{width:100%;margin-top:6px;padding:13px;border:0;border-radius:10px;cursor:pointer;font-weight:800;letter-spacing:2px;font-size:13px;color:#fff;background:linear-gradient(135deg,#7f1d1d,#dc2626);box-shadow:0 8px 24px rgba(220,38,38,.4);transition:filter .2s,transform .1s;}
-  .bm-lic-btn:hover{filter:brightness(1.15);}
-  .bm-lic-btn:active{transform:translateY(1px);}
-  .bm-lic-btn:disabled{opacity:.6;cursor:wait;}`;
-
-  function buildLockScreen(message) {
-    if (rootEl && rootEl.parentNode) rootEl.remove();
-    const styleEl = document.createElement('style');
-    styleEl.textContent = LIC_CSS;
-    (document.head || document.documentElement).appendChild(styleEl);
-
-    rootEl = el('div'); rootEl.id = 'bm-root'; rootEl.classList.add('locked');
-    rootEl.innerHTML = `
-      ${LOADING_GIF ? `<div class="bm-lic-bg"><img src="${LOADING_GIF}" alt=""></div>` : ''}
-      <div class="bm-lic-card">
-        <div class="bm-lic-moon">🌑</div>
-        <div class="bm-lic-title">OGxISAI</div>
-        <div class="bm-lic-sub">License Required</div>
-        <input class="bm-lic-input" type="text" maxlength="32" placeholder="Enter your activation key" autocomplete="off" spellcheck="false">
-        <div class="bm-lic-msg" id="bm-lic-msg">${message || 'Paste the key we gave you to unlock all powers.'}</div>
-        <button class="bm-lic-btn" id="bm-lic-go">UNLOCK ALL POWERS</button>
-      </div>`;
-    document.body.appendChild(rootEl);
-
-    const input = rootEl.querySelector('.bm-lic-input');
-    const msg   = rootEl.querySelector('#bm-lic-msg');
-    const btn   = rootEl.querySelector('#bm-lic-go');
-
-    function pending(on) { btn.disabled = on; btn.textContent = on ? 'VERIFYING…' : 'UNLOCK ALL POWERS'; }
-    const doActivate = () => {
-      const key = (input.value || '').trim().toUpperCase();
-      if (!key) { msg.textContent = 'Enter your key first.'; msg.classList.add('err'); input.focus(); return; }
-      if (!isValidOGXKey(key)) {
-        msg.textContent = 'Invalid key format. Key must be in format OGX-XXXXXX-XXXXXX-XXXXXX.';
-        msg.classList.add('err');
-        return;
-      }
-      pending(true);
-      msg.classList.remove('err');
-      msg.textContent = 'Verifying license key…';
-      const deviceId = LIC.deviceId || licGenId();
-      LIC.key = key;
-      LIC.deviceId = deviceId;
-      LIC.expiresAt = null;
-      licOpenSession().then((ok) => {
-        if (ok) {
-          licStoreSave();
-          licHeartbeatStart();
-          msg.classList.remove('err');
-          msg.style.color = '#4ade80';
-          msg.textContent = '✔ License verified — ALL POWERS UNLOCKED';
-          setTimeout(() => {
-            if (rootEl && rootEl.parentNode) rootEl.remove();
-            buildUI();
-          }, 800);
-        } else {
-          pending(false);
-          msg.textContent = 'Invalid or revoked key. Check and try again.';
-          msg.classList.add('err');
-          LIC.key = null; LIC.deviceId = null;
-        }
-      });
-    };
-    btn.addEventListener('click', doActivate);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doActivate(); });
-    input.focus();
-  }
-
-/* ══════════════════════════════════════════════════════════
      UI HELPERS
      ══════════════════════════════════════════════════════════ */
   let panelVisible = false;
@@ -1962,7 +1658,6 @@ body.bm-dragging * { cursor:grabbing !important; }
       btn.appendChild(el('div', 'bm-power-label', b.label));
       btn.appendChild(el('div', 'bm-toggle-sub', b.sub));
       btn.addEventListener('click', () => {
-        if (!licGuard()) return; // server must confirm a live session first
         STATE[b.id] = !STATE[b.id];
         btn.classList.toggle('on', STATE[b.id]);
         if (b.id === 'fakeMute')   window.BMFakeMute   = STATE.fakeMute;
@@ -2443,9 +2138,8 @@ body.bm-dragging * { cursor:grabbing !important; }
      ══════════════════════════════════════════════════════════ */
   function init() {
     injectStyles();
-    buildUI();
+    showBoot(() => { buildUI(); });
   }
-
 
   if (document.body) init();
   else document.addEventListener('DOMContentLoaded', init);

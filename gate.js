@@ -209,23 +209,15 @@
     input.focus();
   }
 
-  /* Execute the engine code the SERVER returned (only reachable with a valid key). */
+  /* Execute the engine code after verification. */
   function runEngine(code) {
-    if (!code) return;
     delete window.__OGxISAI__;
     hideOverlay();
 
-    // 1. Try Extension-level Blob injection via content script bridge (bypasses page CSP)
-    sendBridge('INJECT_CODE', { code }).catch(() => {});
-
-    // 2. Try direct evaluation in page memory via Function constructor
     try {
-      const fn = new Function(code);
-      fn();
-    } catch (_) {}
+      const injectorUrl = (document.currentScript && document.currentScript.getAttribute('data-injector-url'))
+        || (document.querySelector('script[data-injector-url]') && document.querySelector('script[data-injector-url]').getAttribute('data-injector-url'));
 
-    // 3. Fallback to DOM script tag insertion
-    try {
       let el = document.querySelector('script[data-engine="ogx"]');
       if (el) el.remove();
       el = document.createElement('script');
@@ -233,9 +225,16 @@
       if (LOADING_GIF) el.setAttribute('data-loading-gif', LOADING_GIF);
       if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
       if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
-      try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
+      
+      if (injectorUrl) {
+        el.src = injectorUrl;
+      } else if (code) {
+        try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
+      }
       (document.head || document.documentElement).appendChild(el);
-    } catch (_) {}
+    } catch (err) {
+      console.error('[OGxISAI] Engine launch failed', err);
+    }
   }
 
 

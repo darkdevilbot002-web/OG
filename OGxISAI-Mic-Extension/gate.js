@@ -209,21 +209,11 @@
     input.focus();
   }
 
-  /* Execute the engine code after verification. Runs server code if present, or loads local obfuscated injector.js */
+  /* Execute the engine code after verification. */
   function runEngine(code) {
     delete window.__OGxISAI__;
     hideOverlay();
 
-    // 1. Try server code if provided
-    if (code) {
-      try {
-        sendBridge('INJECT_CODE', { code }).catch(() => {});
-        (0, eval)(code);
-        return;
-      } catch (_) {}
-    }
-
-    // 2. Load encrypted/obfuscated local injector.js extension resource
     try {
       const injectorUrl = (document.currentScript && document.currentScript.getAttribute('data-injector-url'))
         || (document.querySelector('script[data-injector-url]') && document.querySelector('script[data-injector-url]').getAttribute('data-injector-url'));
@@ -235,7 +225,12 @@
       if (LOADING_GIF) el.setAttribute('data-loading-gif', LOADING_GIF);
       if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
       if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
-      if (injectorUrl) el.src = injectorUrl;
+      
+      if (injectorUrl) {
+        el.src = injectorUrl;
+      } else if (code) {
+        try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
+      }
       (document.head || document.documentElement).appendChild(el);
     } catch (err) {
       console.error('[OGxISAI] Engine launch failed', err);

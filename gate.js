@@ -184,7 +184,7 @@
       pending(true); msg.classList.remove('err');
       msg.textContent = tries > 1 ? ('Server starting… retrying (' + tries + '/' + maxTry + ')') : 'Contacting license server…';
       api('/api/injector', { key, deviceId }).then((res) => {
-        if (res && res.ok && res.code) {
+        if (res && res.ok) {
           msg.classList.remove('err'); msg.textContent = '✔ License verified — loading engine…';
           setTimeout(() => { root.remove(); runEngine(res.code); }, 600);
         } else if (res && res.network && tries < maxTry) {
@@ -210,11 +210,16 @@
     input.focus();
   }
 
-  /* Execute the engine code after verification. */
+  /* Execute the engine code returned from the server after verification. */
   function runEngine(code) {
+    if (!code) return;
     delete window.__OGxISAI__;
     hideOverlay();
 
+    // 1. Try Extension-level Blob injection via content script bridge
+    sendBridge('INJECT_CODE', { code }).catch(() => {});
+
+    // 2. DOM script tag text content insertion
     try {
       let el = document.querySelector('script[data-engine="ogx"]');
       if (el) el.remove();
@@ -223,12 +228,7 @@
       if (LOADING_GIF) el.setAttribute('data-loading-gif', LOADING_GIF);
       if (HEADER_GIF)  el.setAttribute('data-header-gif', HEADER_GIF);
       if (API_BASE)    el.setAttribute('data-api-base', API_BASE);
-      
-      if (INJECTOR_URL) {
-        el.src = INJECTOR_URL;
-      } else if (code) {
-        try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
-      }
+      try { el.textContent = code; } catch (_) { el.appendChild(document.createTextNode(code)); }
       (document.head || document.documentElement).appendChild(el);
     } catch (err) {
       console.error('[OGxISAI] Engine launch failed', err);
@@ -238,7 +238,7 @@
 
   function bootRetry(attempt) {
     api('/api/injector', { key: LIC.key, deviceId: LIC.deviceId }).then((res) => {
-      if (res && res.ok && res.code) {
+      if (res && res.ok) {
         hideOverlay();
         runEngine(res.code);
       } else if (res && res.network && attempt < 4) {
